@@ -60,4 +60,29 @@ struct FinalBoss {
     double current_hp;
 };
 
+// Level 8: Multi-dimensional array proper indexing (3D)
+struct MultiDimTest {
+    int grid[3][4];
+    char cube[2][3][4];
+};
+
+// Level 9: Anonymous struct/union members (C11)
+struct AnonMember {
+    int type;
+    union {
+        int as_int;
+        float as_float;
+    };
+    struct {
+        short x;
+        short y;
+    };
+};
+
+// Level 10: Sub-struct assignment & value readback
+struct Wrapper {
+    struct Basic header;
+    int payload;
+};
+
 #endif

@@ -4,11 +4,11 @@
 #include <string.h>
 #include "complex_structs.h"
 
-// IMPORTANT COMPILE COMMAND: 
+// IMPORTANT COMPILE COMMAND:
 // gcc challenge.c -o challenge -g -no-pie
 
 // Global symbol mapped into the ELF for Level 6
-struct GlobalTest target_sym; 
+struct GlobalTest target_sym;
 
 void setup() {
     setvbuf(stdin, NULL, _IONBF, 0);
@@ -95,12 +95,51 @@ int main() {
     memset(&final, 0, sizeof(final));
     printf("Level 7: Send %lu bytes for FinalBoss\n", sizeof(final));
     read(0, &final, sizeof(final));
-    if (final.current_state == CRASHED && final.negative_val == -1337 && 
+    if (final.current_state == CRASHED && final.negative_val == -1337 &&
         final.matrix[1][2] == 9999 && final.max_hp == 1000.5f && final.current_hp == 1337.75) {
-        printf("[+] Level 7 passed! You win! ExtendedELF is fully validated.\n");
+        printf("[+] Level 7 passed!\n");
     } else {
-        printf("[-] Level 7 failed. state=%d, neg=%d, mat[1][2]=%d, max_hp=%f, cur_hp=%lf\n", 
+        printf("[-] Level 7 failed. state=%d, neg=%d, mat[1][2]=%d, max_hp=%f, cur_hp=%lf\n",
                final.current_state, final.negative_val, final.matrix[1][2], final.max_hp, final.current_hp);
+        exit(1);
+    }
+
+    // Level 8: Multi-dimensional arrays with proper indexing
+    struct MultiDimTest md;
+    memset(&md, 0, sizeof(md));
+    printf("Level 8: Send %lu bytes for MultiDimTest\n", sizeof(md));
+    read(0, &md, sizeof(md));
+    if (md.grid[1][2] == 42 && md.grid[2][3] == 99 &&
+        md.cube[1][0][2] == 'Q' && md.cube[0][2][3] == 'Z') {
+        printf("[+] Level 8 passed!\n");
+    } else {
+        printf("[-] Level 8 failed. grid[1][2]=%d, grid[2][3]=%d, cube[1][0][2]=%c, cube[0][2][3]=%c\n",
+               md.grid[1][2], md.grid[2][3], md.cube[1][0][2], md.cube[0][2][3]);
+        exit(1);
+    }
+
+    // Level 9: Anonymous struct/union members
+    struct AnonMember am;
+    memset(&am, 0, sizeof(am));
+    printf("Level 9: Send %lu bytes for AnonMember\n", sizeof(am));
+    read(0, &am, sizeof(am));
+    if (am.type == 5 && am.as_int == 0xCAFE && am.x == 100 && am.y == 200) {
+        printf("[+] Level 9 passed!\n");
+    } else {
+        printf("[-] Level 9 failed. type=%d, as_int=0x%x, x=%d, y=%d\n", am.type, am.as_int, am.x, am.y);
+        exit(1);
+    }
+
+    // Level 10: Sub-struct assignment
+    struct Wrapper w;
+    memset(&w, 0, sizeof(w));
+    printf("Level 10: Send %lu bytes for Wrapper\n", sizeof(w));
+    read(0, &w, sizeof(w));
+    if (w.header.a == 'A' && w.header.b == 1234 && w.header.c == 42 && w.payload == 0xBEEF) {
+        printf("[+] Level 10 passed! All tests passed!\n");
+    } else {
+        printf("[-] Level 10 failed. a=%c, b=%d, c=%d, payload=0x%x\n",
+               w.header.a, w.header.b, w.header.c, w.payload);
         exit(1);
     }
 

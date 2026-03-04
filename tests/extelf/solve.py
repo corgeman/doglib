@@ -9,9 +9,9 @@ headers = CHeader("complex_structs.h")
 # Ensure you compile the challenge first: gcc challenge.c -o challenge -g -no-pie
 # We load it with ExtendedELF so we can parse its global variables!
 chal_elf = ExtendedELF("./challenge")
-
+context.binary = chal_elf
 io = process("./challenge")
-
+info(context.bits)
 # --- LEVEL 1: Padding & Basics ---
 log.info("Solving Level 1...")
 basic = headers.craft('Basic')
@@ -47,7 +47,7 @@ io.sendafter(b"BossFight\n", bytes(boss))
 # --- LEVEL 5: Truncation & Overflows ---
 log.info("Solving Level 5...")
 edge = headers.craft('EdgeCases')
-edge.small_int = 0xdeadbeef 
+edge.small_int = 0xdeadbeef
 edge.small_buf = b"AAAA\x00TRASH_DATA_THAT_GETS_DROPPED"
 edge.big_int = -1
 io.sendafter(b"EdgeCases\n", bytes(edge))
@@ -62,19 +62,51 @@ io.sendafter(b"(8 bytes)\n", p64(target_addr))
 # --- LEVEL 7: Enums, Signed Values, Multi-Dimensional Arrays, & Floats ---
 log.info("Solving Level 7...")
 final = headers.craft('FinalBoss')
-final.current_state = -1  # CRASHED (Tests setting Enums natively)
-
-# For negative integer masking (-1337 mathematically translates to 0xfac7 on unsigned bounds).
+final.current_state = -1  # CRASHED
 final.negative_val = -1337
 
-# DWARF physically flattens multi-dimensional C arrays in memory. 
-# We access matrix[1][2] dynamically by flattening the index (row * NUM_COLS) + col -> (1 * 3) + 2 = [5]
-final.matrix[5] = 9999
+# Multi-dimensional arrays now support proper [row][col] indexing!
+final.matrix[1][2] = 9999
 
-# Python floats/doubles are now naturally serialized!
 final.max_hp = 1000.5
 final.current_hp = 1337.75
-
 io.sendafter(b"FinalBoss\n", bytes(final))
+
+# --- LEVEL 8: Multi-Dimensional Array Proper Indexing (2D + 3D) ---
+log.info("Solving Level 8...")
+md = headers.craft('MultiDimTest')
+md.grid[1][2] = 42
+md.grid[2][3] = 99
+md.cube[1][0][2] = ord('Q')
+md.cube[0][2][3] = ord('Z')
+io.sendafter(b"MultiDimTest\n", bytes(md))
+
+# --- LEVEL 9: Anonymous Struct/Union Members ---
+log.info("Solving Level 9...")
+am = headers.craft('AnonMember')
+am.type = 5
+am.as_int = 0xCAFE   # Accessed directly through anonymous union
+am.x = 100           # Accessed directly through anonymous struct
+am.y = 200
+io.sendafter(b"AnonMember\n", bytes(am))
+
+# --- LEVEL 10: Sub-Struct Assignment & Value Readback ---
+log.info("Solving Level 10...")
+hdr = headers.craft('Basic')
+hdr.a = ord('A')
+hdr.b = 1234
+hdr.c = 42
+
+wrapper = headers.craft('Wrapper')
+wrapper.header = hdr    # Sub-struct assignment: DWARFCrafter -> DWARFCrafter!
+wrapper.payload = 0xBEEF
+
+# Test .value readback on the fields we just set
+assert wrapper.payload.value == 0xBEEF, "Integer value readback failed!"
+assert wrapper.header.a.value == ord('A'), "Char value readback failed!"
+assert wrapper.header.b.value == 1234, "Int value readback failed!"
+log.info(f"Value readback tests passed (payload={hex(wrapper.payload.value)}, a={wrapper.header.a.value}, b={wrapper.header.b.value})")
+
+io.sendafter(b"Wrapper\n", bytes(wrapper))
 
 io.interactive()
