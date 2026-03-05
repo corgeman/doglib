@@ -511,6 +511,112 @@ except TypeError:
     pass
 log.success("p64/hex/int on DWARFCrafter fields: PASSED")
 
+# ============================================================
+# Round 4: QoL — bitwise ops, __format__, __repr__, items/dump/values/copy/fill
+# ============================================================
+
+# --- TEST: bitwise operators ---
+bw = headers.craft('FinalBoss')
+bw.current_state = 0xff
+assert (bw.current_state & 0x0f) == 0x0f
+assert (bw.current_state | 0x100) == 0x1ff
+assert (bw.current_state ^ 0xf0) == 0x0f
+assert (bw.current_state >> 4) == 0x0f
+assert (bw.current_state << 4) == 0xff0
+assert (~bw.current_state) == ~0xff
+assert (0xff00 & bw.current_state) == 0
+assert (bw.current_state ** 2) == 0xff ** 2
+log.success("bitwise operators + pow: PASSED")
+
+# --- TEST: __format__ ---
+fmt_fb = headers.craft('FinalBoss')
+fmt_fb.current_state = 0x41
+fmt_fb.max_hp = 3.14
+assert f'{fmt_fb.current_state:#x}' == '0x41'
+assert f'{fmt_fb.current_state:08x}' == '00000041'
+assert f'{fmt_fb.max_hp:.2f}' == '3.14'
+log.success("__format__: PASSED")
+
+# --- TEST: __repr__ shows type + value ---
+repr_fb = headers.craft('FinalBoss')
+repr_fb.current_state = 42
+repr_fb.negative_val = -10
+repr_fb.max_hp = 1.5
+assert '0x2a' in repr(repr_fb.current_state)
+assert '-10' in repr(repr_fb.negative_val)
+assert '1.5' in repr(repr_fb.max_hp)
+full = repr(repr_fb)
+assert 'FinalBoss' in full and 'current_state' in full and 'matrix=<array' in full
+log.success("__repr__ improvements: PASSED")
+
+# --- TEST: __contains__ ---
+assert 'current_state' in repr_fb
+assert 'negative_val' in repr_fb
+assert 'does_not_exist' not in repr_fb
+log.success("__contains__: PASSED")
+
+# --- TEST: items() ---
+items_fb = headers.craft('FinalBoss')
+items_fb.current_state = 99
+items_fb.max_hp = 7.5
+item_dict = dict(items_fb.items())
+assert 'current_state' in item_dict and 'max_hp' in item_dict and 'matrix' in item_dict
+assert item_dict['current_state'].value == 99
+log.success("items(): PASSED")
+
+# --- TEST: dump() no crash ---
+dump_fb = headers.craft('FinalBoss')
+dump_fb.current_state = 1
+dump_fb.negative_val = -42
+dump_fb.max_hp = 2.5
+dump_fb.matrix[0][0] = 1
+dump_fb.matrix[1][2] = 6
+dump_fb.dump()
+log.success("dump(): PASSED (no crash)")
+
+# --- TEST: copy() on DWARFCrafter ---
+orig = headers.craft('FinalBoss')
+orig.current_state = 77
+cloned = orig.copy()
+cloned.current_state = 0
+assert orig.current_state.value == 77
+assert cloned.current_state.value == 0
+log.success("copy() on DWARFCrafter: PASSED")
+
+# --- TEST: copy() on DWARFArrayCrafter ---
+orig_arr = headers.craft('int[4]')
+orig_arr[0] = 10
+cloned_arr = orig_arr.copy()
+cloned_arr[0] = 999
+assert orig_arr[0].value == 10
+assert cloned_arr[0].value == 999
+log.success("copy() on DWARFArrayCrafter: PASSED")
+
+# --- TEST: values() ---
+vals_arr = headers.craft('int[4]')
+vals_arr[0] = 1; vals_arr[1] = 2; vals_arr[2] = 3; vals_arr[3] = 4
+assert vals_arr.values() == [1, 2, 3, 4]
+vals_grid = headers.craft('int[2][3]')
+vals_grid[0][0]=10; vals_grid[0][1]=20; vals_grid[0][2]=30
+vals_grid[1][0]=40; vals_grid[1][1]=50; vals_grid[1][2]=60
+assert vals_grid.values() == [[10, 20, 30], [40, 50, 60]]
+log.success("values(): PASSED")
+
+# --- TEST: fill() ---
+fill_a = headers.craft('int[6]')
+fill_a.fill(0xbeef)
+assert all(v == 0xbeef for v in fill_a.values())
+log.success("fill(): PASSED")
+
+# --- TEST: += in-place update ---
+inplace = headers.craft('FinalBoss')
+inplace.current_state = 10
+inplace.current_state += 5
+assert inplace.current_state.value == 15
+inplace.current_state -= 3
+assert inplace.current_state.value == 12
+log.success("+= / -= in-place: PASSED")
+
 log.success("All feature tests passed!")
 
 io.close()

@@ -24,10 +24,10 @@ only notable function right now is `quickrop` which sets up a system('/bin/sh') 
 ## extelf
 very useful claude-slopped extension to pwntools `ELF`,
 lets you make use of debug symbols every way you wished you could in an exploit
-if the elf has debug symbols, lets you:
 - get the address of specific fields in a symbol
-    - ^ but casted at a specific address
 - craft your own fake `struct`s to use in payloads
+- parse raw bytes into a struct
+- determine offsets of fields in structs
 ```python
 libc = ExtendedELF('./libc.so.6')
 target_fd = libc.sym_obj['main_arena'].bins[3].fd # correct address of this field
@@ -41,6 +41,8 @@ fake_tps.counts[15] = 1
 fake_tps.entries[15] = 0x123456
 bytes(fake_tps) # payload bytes
 ```
+and many more! a bunch of basic types are already included in `extelf.C`, `C32`, and `C64`, so
+you can play around with it yourself.
 
 ## asm
 basic assembler/disassembler stuff because pwntools is ungodly slow

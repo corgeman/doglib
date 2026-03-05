@@ -262,12 +262,74 @@ class DWARFCrafter:
             super().__setattr__('_backing', backing)
 
     def __bytes__(self):
-        return bytes(self._backing[self._offset : self._offset + self._size])
+        end = self._offset + self._size
+        # Root views (offset 0) expose any OOB-extended backing so callers see what was written.
+        if self._offset == 0 and len(self._backing) > end:
+            end = len(self._backing)
+        return bytes(self._backing[self._offset : end])
 
     def __len__(self):
         return self._size
 
     def __repr__(self):
+        try:
+            dwarfinfo = self._elf._get_dwarfinfo()
+            die = dwarfinfo.get_DIE_from_refaddr(self._type_die_offset)
+            current_die = self._elf._unwrap_type(die)
+            type_name = self._elf._get_type_name(die)
+
+            if current_die.tag == 'DW_TAG_base_type':
+                v = self.value
+                if isinstance(v, float):
+                    return f"<{type_name} {v!r}>"
+                if isinstance(v, bool):
+                    return f"<{type_name} {v}>"
+                if isinstance(v, int) and v < 0:
+                    return f"<{type_name} {v}>"
+                return f"<{type_name} {hex(v)}>"
+
+            if current_die.tag == 'DW_TAG_pointer_type':
+                return f"<{type_name} {hex(int.from_bytes(bytes(self), 'little' if self._elf.little_endian else 'big', signed=False))}>"
+
+            if current_die.tag == 'DW_TAG_enumeration_type':
+                return f"<{type_name} {hex(self.value)}>"
+
+            if current_die.tag in ('DW_TAG_structure_type', 'DW_TAG_union_type'):
+                parts = []
+                for child in current_die.iter_children():
+                    if child.tag != 'DW_TAG_member':
+                        continue
+                    name_attr = child.attributes.get('DW_AT_name')
+                    if not name_attr:
+                        continue
+                    field_name = name_attr.value.decode('utf-8')
+                    field_type_die = self._elf._get_die_from_attr(child, 'DW_AT_type')
+                    if not field_type_die:
+                        continue
+                    field_unwrapped = self._elf._unwrap_type(field_type_die)
+                    # Skip large/array fields to keep repr manageable
+                    if field_unwrapped and field_unwrapped.tag == 'DW_TAG_array_type':
+                        total = self._elf._get_byte_size(field_unwrapped)
+                        dims = self._elf._get_array_subranges(field_unwrapped)
+                        dims_str = ''.join(f'[{d}]' for d in dims)
+                        parts.append(f"{field_name}=<array{dims_str}>")
+                        continue
+                    field_size = self._elf._get_byte_size(field_unwrapped) if field_unwrapped else 0
+                    if field_size > 16:
+                        parts.append(f"{field_name}=<{self._elf._get_type_name(field_type_die)}>")
+                        continue
+                    offset = self._elf._parse_member_offset(child)
+                    sub = DWARFCrafter(self._elf, field_type_die.offset, self._backing, self._offset + offset)
+                    parts.append(f"{field_name}={repr(sub)}")
+                body = ', '.join(parts)
+                return f"<{type_name} {{{body}}}>"
+
+            if current_die.tag == 'DW_TAG_array_type':
+                dims = self._elf._get_array_subranges(current_die)
+                dims_str = ''.join(f'[{d}]' for d in dims[self._subrange_start:])
+                return f"<array{dims_str} size={self._size}>"
+        except Exception:
+            pass
         hex_data = bytes(self).hex()
         preview = hex_data[:32] + ('...' if len(hex_data) > 32 else '')
         return f"<DWARFCrafter size={self._size} data={preview}>"
@@ -287,6 +349,74 @@ class DWARFCrafter:
     def __int__(self):
         return self.__index__()
 
+    def __float__(self):
+        v = self.value
+        if isinstance(v, float):
+            return v
+        if isinstance(v, int):
+            return float(v)
+        raise TypeError(f"Cannot convert {type(v).__name__} to float (struct/union types have no single numeric value; use bytes() for raw data)")
+
+    def _numeric_value(self):
+        v = self.value
+        if isinstance(v, (int, float)):
+            return v
+        raise TypeError(f"Cannot perform arithmetic on {type(v).__name__} (struct/union types have no single numeric value)")
+
+    # gross but seemingly no better solution
+    def __add__(self, other):      return self._numeric_value() + other
+    def __radd__(self, other):     return other + self._numeric_value()
+    def __sub__(self, other):      return self._numeric_value() - other
+    def __rsub__(self, other):     return other - self._numeric_value()
+    def __mul__(self, other):      return self._numeric_value() * other
+    def __rmul__(self, other):     return other * self._numeric_value()
+    def __truediv__(self, other):  return self._numeric_value() / other
+    def __rtruediv__(self, other): return other / self._numeric_value()
+    def __floordiv__(self, other): return self._numeric_value() // other
+    def __rfloordiv__(self, other):return other // self._numeric_value()
+    def __mod__(self, other):      return self._numeric_value() % other
+    def __rmod__(self, other):     return other % self._numeric_value()
+    def __neg__(self):             return -self._numeric_value()
+    def __pos__(self):             return +self._numeric_value()
+    def __abs__(self):             return abs(self._numeric_value())
+    def __lt__(self, other):       return self._numeric_value() < other
+    def __le__(self, other):       return self._numeric_value() <= other
+    def __eq__(self, other):       return self._numeric_value() == other
+    def __ne__(self, other):       return self._numeric_value() != other
+    def __gt__(self, other):       return self._numeric_value() > other
+    def __ge__(self, other):       return self._numeric_value() >= other
+    def __hash__(self):            return hash(self._numeric_value())
+
+    def __and__(self, other):      return self._numeric_value() & other
+    def __rand__(self, other):     return other & self._numeric_value()
+    def __or__(self, other):       return self._numeric_value() | other
+    def __ror__(self, other):      return other | self._numeric_value()
+    def __xor__(self, other):      return self._numeric_value() ^ other
+    def __rxor__(self, other):     return other ^ self._numeric_value()
+    def __lshift__(self, other):   return self._numeric_value() << other
+    def __rlshift__(self, other):  return other << self._numeric_value()
+    def __rshift__(self, other):   return self._numeric_value() >> other
+    def __rrshift__(self, other):  return other >> self._numeric_value()
+    def __invert__(self):          return ~self._numeric_value()
+    def __pow__(self, other):      return self._numeric_value() ** other
+    def __rpow__(self, other):     return other ** self._numeric_value()
+    def __divmod__(self, other):   return divmod(self._numeric_value(), other)
+    def __rdivmod__(self, other):  return divmod(other, self._numeric_value())
+    def __bool__(self):            return bool(self._numeric_value())
+    def __round__(self, n=None):   return round(self._numeric_value(), n)
+    def __trunc__(self):
+        import math; return math.trunc(self._numeric_value())
+    def __floor__(self):
+        import math; return math.floor(self._numeric_value())
+    def __ceil__(self):
+        import math; return math.ceil(self._numeric_value())
+
+    def __format__(self, format_spec):
+        v = self.value
+        if isinstance(v, (int, float, bool)):
+            return format(v, format_spec)
+        return format(bytes(self).hex(), format_spec)
+
     @property
     def value(self):
         """Read back the current value of a primitive field from the backing array."""
@@ -301,6 +431,8 @@ class DWARFCrafter:
             encoding = current_die.attributes.get('DW_AT_encoding')
             if encoding:
                 enc = encoding.value
+                if enc == 0x02:  # DW_ATE_boolean
+                    return bool(int.from_bytes(raw, byteorder=byte_order, signed=False))
                 if enc == 0x04:  # DW_ATE_float
                     fmt = ('<' if self._elf.little_endian else '>') + ('f' if self._size == 4 else 'd')
                     return struct.unpack(fmt, raw)[0]
@@ -457,6 +589,153 @@ class DWARFCrafter:
         elem_offset, type_die, sub_start = self._resolve_index(index)
         self._write_value(elem_offset, type_die, value, sub_start)
 
+    def __contains__(self, name):
+        """Check whether a named field exists in this struct/union."""
+        try:
+            self._resolve_field(name)
+            return True
+        except AttributeError:
+            return False
+
+    def items(self):
+        """
+        Yield (field_name, DWARFCrafter) pairs for each direct member.
+        Only works on struct/union types.
+
+        Example:
+            for name, field in chunk.items():
+                print(name, field.value)
+        """
+        dwarfinfo = self._elf._get_dwarfinfo()
+        die = dwarfinfo.get_DIE_from_refaddr(self._type_die_offset)
+        current_die = self._elf._unwrap_type(die)
+        if current_die.tag not in ('DW_TAG_structure_type', 'DW_TAG_union_type'):
+            raise TypeError(f"items() only works on struct/union types, not {current_die.tag}")
+        for child in current_die.iter_children():
+            if child.tag != 'DW_TAG_member':
+                continue
+            name_attr = child.attributes.get('DW_AT_name')
+            if not name_attr:
+                continue
+            field_name = name_attr.value.decode('utf-8')
+            field_type_die = self._elf._get_die_from_attr(child, 'DW_AT_type')
+            if not field_type_die:
+                continue
+            offset = self._elf._parse_member_offset(child)
+            yield field_name, DWARFCrafter(self._elf, field_type_die.offset, self._backing, self._offset + offset)
+
+    def dump(self):
+        """
+        Pretty-print all struct fields and their current values.
+        Skips array fields with more than 8 elements to avoid flooding output.
+
+        Example:
+            chunk = libc.parse('malloc_chunk', leak)
+            chunk.dump()
+        """
+        dwarfinfo = self._elf._get_dwarfinfo()
+        die = dwarfinfo.get_DIE_from_refaddr(self._type_die_offset)
+        current_die = self._elf._unwrap_type(die)
+        if current_die.tag not in ('DW_TAG_structure_type', 'DW_TAG_union_type'):
+            raise TypeError(f"dump() only works on struct/union types, not {current_die.tag}")
+        type_name = self._elf._get_type_name(die)
+        print(f"{type_name}:")
+        for field_name, field in self.items():
+            field_die = dwarfinfo.get_DIE_from_refaddr(field._type_die_offset)
+            field_unwrapped = self._elf._unwrap_type(field_die)
+            if field_unwrapped and field_unwrapped.tag == 'DW_TAG_array_type':
+                total = self._elf._get_byte_size(field_unwrapped)
+                dims = self._elf._get_array_subranges(field_unwrapped)
+                dims_str = ''.join(f'[{d}]' for d in dims)
+                elem_type = self._elf._get_die_from_attr(field_unwrapped, 'DW_AT_type')
+                elem_name = self._elf._get_type_name(elem_type) if elem_type else '?'
+                total_elems = 1
+                for d in dims:
+                    total_elems *= d
+                if total_elems <= 8:
+                    def _fmt_val(v):
+                        if isinstance(v, list):
+                            return '[' + ', '.join(_fmt_val(x) for x in v) + ']'
+                        if isinstance(v, float):
+                            return repr(v)
+                        if isinstance(v, int) and v < 0:
+                            return str(v)
+                        if isinstance(v, int):
+                            return hex(v)
+                        return repr(v)
+                    def _collect_vals(crafter, remaining_dims):
+                        if len(remaining_dims) == 1:
+                            return [el.value for el in crafter]
+                        return [_collect_vals(el, remaining_dims[1:]) for el in crafter]
+                    nested = _collect_vals(field, dims)
+                    print(f"  {field_name}: {elem_name}{dims_str} = {_fmt_val(nested)}")
+                else:
+                    print(f"  {field_name}: {elem_name}{dims_str} ({total} bytes)")
+            else:
+                v = field.value
+                if isinstance(v, bool):
+                    print(f"  {field_name} = {v}")
+                elif isinstance(v, int) and v < 0:
+                    print(f"  {field_name} = {v}")
+                elif isinstance(v, int):
+                    print(f"  {field_name} = {hex(v)}")
+                elif isinstance(v, float):
+                    print(f"  {field_name} = {v!r}")
+                else:
+                    print(f"  {field_name} = {bytes(field).hex()}")
+
+    def copy(self):
+        """
+        Return an independent copy of this crafter with its own backing buffer.
+
+        Example:
+            original = libc.parse('malloc_chunk', leak)
+            modified = original.copy()
+            modified.fd = 0xdeadbeef
+            # original is unchanged
+        """
+        new_backing = bytearray(self._backing)
+        return DWARFCrafter(self._elf, self._type_die_offset, new_backing, self._offset, self._subrange_start)
+
+    def fill(self, value):
+        """
+        Fill the backing region of this crafter with a repeated byte value (memset-style).
+        value must be an int 0-255, or bytes/bytearray (which will be repeated to fill).
+
+        Example:
+            chunk = libc.craft('malloc_chunk')
+            chunk.fill(0x41)   # fill all bytes with 'A'
+            chunk.fill(b'\\xcc')
+        """
+        if isinstance(value, int):
+            if not 0 <= value <= 255:
+                raise ValueError(f"fill() byte value must be 0-255, got {value}")
+            pattern = bytes([value])
+        elif isinstance(value, (bytes, bytearray)):
+            if not value:
+                raise ValueError("fill() pattern cannot be empty")
+            pattern = bytes(value)
+        else:
+            raise TypeError(f"fill() expects int (0-255) or bytes, got {type(value).__name__}")
+        size = self._size
+        filled = (pattern * (size // len(pattern) + 1))[:size]
+        self._backing[self._offset : self._offset + size] = filled
+
+    def cyclic(self, n=None):
+        """
+        Fill the backing region with pwntools cyclic() output.
+        n defaults to the full size of the crafter.
+
+        Example:
+            chunk = libc.craft('malloc_chunk')
+            chunk.cyclic()
+            bytes(chunk)  # b'aaaabaaacaaa...'
+        """
+        from pwn import cyclic as pwn_cyclic
+        size = n if n is not None else self._size
+        data = pwn_cyclic(size)
+        self._backing[self._offset : self._offset + size] = data
+
 
 class DWARFArrayCrafter:
     """
@@ -503,9 +782,12 @@ class DWARFArrayCrafter:
                 if i < len(value):
                     self[idx] = value[i]
             return
-        if len(self._dims) == 1 and isinstance(value, (int, float)):
-            crafter = self[index]
-            crafter.value = value
+        if isinstance(value, (int, float)):
+            sub = self[index]
+            if isinstance(sub, DWARFArrayCrafter):
+                sub.fill(value)
+            else:
+                sub.value = value
             return
         inner = self._inner_count()
         offset = self._base_offset + index * inner * self._elem_size
@@ -531,13 +813,75 @@ class DWARFArrayCrafter:
             yield self[i]
 
     def __bytes__(self):
-        return bytes(self._backing[self._base_offset : self._base_offset + self._total_bytes])
+        start = self._base_offset
+        end = start + self._total_bytes
+        # Root views (base_offset 0) expose any OOB-extended backing so callers see what was written.
+        if start == 0 and len(self._backing) > end:
+            end = len(self._backing)
+        return bytes(self._backing[start : end])
 
     def __repr__(self):
         die = self._elf._get_dwarfinfo().get_DIE_from_refaddr(self._type_die_offset)
         type_name = self._elf._get_type_name(die)
         dims_str = ''.join(f'[{d}]' for d in self._dims)
         return f"<DWARFArrayCrafter {type_name}{dims_str} size={self._total_bytes}>"
+
+    def values(self):
+        """
+        Return a (nested) list of Python primitive values for all elements.
+        For multi-dimensional arrays, returns nested lists.
+
+        Example:
+            arr = headers.parse('int[4]', data)
+            arr.values()  # [1, 2, 3, 4]
+
+            grid = headers.parse('int[2][3]', data)
+            grid.values()  # [[1, 2, 3], [4, 5, 6]]
+        """
+        if len(self._dims) == 1:
+            return [elem.value for elem in self]
+        return [self[i].values() for i in range(self._dims[0])]
+
+    def fill(self, value):
+        """
+        Set all elements to the given value.
+
+        Example:
+            arr = headers.craft('int[8]')
+            arr.fill(0)
+            arr.fill(0x41)
+        """
+        for i in range(self._dims[0]):
+            self[i] = value
+
+    def cyclic(self, n=None):
+        """
+        Fill the backing region with pwntools cyclic() output.
+        n defaults to the full size of the array.
+
+        Example:
+            arr = headers.craft('int[8]')
+            arr.cyclic()
+            bytes(arr)  # b'aaaabaaacaaa...'
+        """
+        from pwn import cyclic as pwn_cyclic
+        size = n if n is not None else self._total_bytes
+        data = pwn_cyclic(size)
+        self._backing[self._base_offset : self._base_offset + size] = data
+
+    def copy(self):
+        """
+        Return an independent copy of this array crafter with its own backing buffer.
+
+        Example:
+            original = headers.parse('int[8]', data)
+            modified = original.copy()
+            modified[0] = 0xdeadbeef
+            # original[0] is unchanged
+        """
+        new_backing = bytearray(self._backing)
+        return DWARFArrayCrafter(self._elf, self._type_die_offset, self._dims,
+                                 backing=new_backing, base_offset=self._base_offset)
 
 
 class _CVarAccessor:
@@ -597,6 +941,7 @@ class ExtendedELF(ELF):
         'signed short': 'short int',
         'signed long': 'long int',
         'signed long long': 'long long int',
+        'bool': '_Bool',
     }
 
     def _resolve_type_name(self, name):
@@ -1282,3 +1627,31 @@ class CHeader(ExtendedELF):
 
         kwargs.setdefault('checksec', False)
         super().__init__(elf_path, **kwargs)
+
+
+# ---- built-in C type environment ----------------------------------------
+
+# CHeader with every standard C type
+class CTypes(CHeader):
+    def __init__(self, bits=None):
+        from importlib.resources import files
+        header_src = files('doglib.data').joinpath('ctypes_builtin.h')
+        super().__init__(str(header_src), bits=bits)
+
+
+_CTYPES_SINGLETONS = {}
+
+
+def __getattr__(name):
+    if name in ('C', 'C32', 'C64'):
+        inst = _CTYPES_SINGLETONS.get(name)
+        if inst is None:
+            if name == 'C':
+                inst = CTypes()
+            elif name == 'C32':
+                inst = CTypes(bits=32)
+            else:  # 'C64'
+                inst = CTypes(bits=64)
+            _CTYPES_SINGLETONS[name] = inst
+        return inst
+    raise AttributeError(name)
