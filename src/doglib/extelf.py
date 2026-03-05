@@ -363,13 +363,49 @@ class DWARFCrafter:
             return v
         raise TypeError(f"Cannot perform arithmetic on {type(v).__name__} (struct/union types have no single numeric value)")
 
-    # gross but seemingly no better solution
-    def __add__(self, other):      return self._numeric_value() + other
-    def __radd__(self, other):     return other + self._numeric_value()
+    def _struct_tag(self):
+        """Return the unwrapped DWARF tag string for this crafter's type."""
+        die = self._elf._get_dwarfinfo().get_DIE_from_refaddr(self._type_die_offset)
+        return self._elf._unwrap_type(die).tag
+
+    # ------------------------------------------------------------------ #
+    #  Arithmetic / comparison operators                                   #
+    # ------------------------------------------------------------------ #
+
+    def __add__(self, other):
+        """struct + struct of the same type → DWARFArrayCrafter of 2 elements.
+        All other cases fall through to numeric addition."""
+        if (isinstance(other, DWARFCrafter)
+                and other._type_die_offset == self._type_die_offset
+                and self._struct_tag() in ('DW_TAG_structure_type', 'DW_TAG_union_type')):
+            combined = bytearray(bytes(self)) + bytearray(bytes(other))
+            return DWARFArrayCrafter(self._elf, self._type_die_offset, (2,), backing=combined)
+        return self._numeric_value() + other
+
+    def __radd__(self, other):
+        """other + self — mirrors __add__ for the struct-concatenation case.
+        Python calls __radd__ when other.__add__(self) returns NotImplemented,
+        which includes the subclass-priority rule where self is a subclass of other."""
+        if (isinstance(other, DWARFCrafter)
+                and other._type_die_offset == self._type_die_offset
+                and self._struct_tag() in ('DW_TAG_structure_type', 'DW_TAG_union_type')):
+            combined = bytearray(bytes(other)) + bytearray(bytes(self))
+            return DWARFArrayCrafter(self._elf, self._type_die_offset, (2,), backing=combined)
+        return other + self._numeric_value()
     def __sub__(self, other):      return self._numeric_value() - other
     def __rsub__(self, other):     return other - self._numeric_value()
-    def __mul__(self, other):      return self._numeric_value() * other
-    def __rmul__(self, other):     return other * self._numeric_value()
+
+    def __mul__(self, n):
+        """struct * int → DWARFArrayCrafter of n independent copies.
+        All other cases fall through to numeric multiplication."""
+        if isinstance(n, int) and self._struct_tag() in ('DW_TAG_structure_type', 'DW_TAG_union_type'):
+            if n < 0:
+                raise ValueError("Repetition count must be non-negative")
+            return DWARFArrayCrafter(self._elf, self._type_die_offset, (n,),
+                                     backing=bytearray(bytes(self) * n))
+        return self._numeric_value() * n
+
+    def __rmul__(self, n):         return self.__mul__(n)
     def __truediv__(self, other):  return self._numeric_value() / other
     def __rtruediv__(self, other): return other / self._numeric_value()
     def __floordiv__(self, other): return self._numeric_value() // other
@@ -381,10 +417,25 @@ class DWARFCrafter:
     def __abs__(self):             return abs(self._numeric_value())
     def __lt__(self, other):       return self._numeric_value() < other
     def __le__(self, other):       return self._numeric_value() <= other
-    def __eq__(self, other):       return self._numeric_value() == other
-    def __ne__(self, other):       return self._numeric_value() != other
+
+    def __eq__(self, other):
+        try:
+            return self._numeric_value() == other
+        except TypeError:
+            if isinstance(other, (DWARFCrafter, bytes, bytearray)):
+                return bytes(self) == bytes(other)
+            return NotImplemented
+
+    def __ne__(self, other):
+        result = self.__eq__(other)
+        return result if result is NotImplemented else not result
+
     def __gt__(self, other):       return self._numeric_value() > other
     def __ge__(self, other):       return self._numeric_value() >= other
+
+    # Struct/union/array types are mutable, so hashing them is intentionally
+    # unsupported — mutating an object after using it as a dict key silently
+    # breaks lookup semantics.  Primitive/enum/pointer fields remain hashable.
     def __hash__(self):            return hash(self._numeric_value())
 
     def __and__(self, other):      return self._numeric_value() & other
@@ -402,7 +453,11 @@ class DWARFCrafter:
     def __rpow__(self, other):     return other ** self._numeric_value()
     def __divmod__(self, other):   return divmod(self._numeric_value(), other)
     def __rdivmod__(self, other):  return divmod(other, self._numeric_value())
-    def __bool__(self):            return bool(self._numeric_value())
+    def __bool__(self):
+        try:
+            return bool(self._numeric_value())
+        except TypeError:
+            return any(self._backing[self._offset : self._offset + self._size])
     def __round__(self, n=None):   return round(self._numeric_value(), n)
     def __trunc__(self):
         import math; return math.trunc(self._numeric_value())
@@ -744,12 +799,85 @@ class DWARFCrafter:
         data = pwn_cyclic(size)
         self._backing[self._offset : self._offset + size] = data
 
+    def values(self):
+        """
+        Return the value(s) held by this crafter:
+        - Primitive / enum / pointer field → the Python scalar (.value)
+        - Array field (DW_TAG_array_type) → nested list of element values,
+          matching the shape of the array (same as DWARFArrayCrafter.values())
+        - Struct / union → dict mapping each field name to its values()
+
+        Example:
+            chunk.fd.values()             # 0xdeadbeef  (int)
+            boss.matrix.values()          # [[1,2,3],[4,5,6]]
+            chunk.values()                # {'prev_size': 0, 'size': 0x21, ...}
+        """
+        dwarfinfo = self._elf._get_dwarfinfo()
+        die = dwarfinfo.get_DIE_from_refaddr(self._type_die_offset)
+        current_die = self._elf._unwrap_type(die)
+        if current_die.tag in ('DW_TAG_base_type', 'DW_TAG_pointer_type', 'DW_TAG_enumeration_type'):
+            return self.value
+        if current_die.tag == 'DW_TAG_array_type':
+            length = self._current_array_length()
+            return [self[i].values() for i in range(length)]
+        if current_die.tag in ('DW_TAG_structure_type', 'DW_TAG_union_type'):
+            return {name: field.values() for name, field in self.items()}
+        return bytes(self)
+
+    def index(self, value, start=0, stop=None):
+        """
+        Return the index of the first element equal to value.
+        Only works on array-typed DWARFCrafter fields (DW_TAG_array_type).
+        Raises TypeError if called on a non-array type.
+        Raises ValueError if the value is not found.
+
+        Example:
+            boss.arr.index(42)
+            boss.arr.index(42, 2)   # search from index 2
+        """
+        length = self._current_array_length()
+        if stop is None:
+            stop = length
+        for i in range(start, stop):
+            child = self[i]
+            if isinstance(value, (int, float)) and child.value == value:
+                return i
+            if isinstance(value, (bytes, bytearray)) and bytes(child) == bytes(value):
+                return i
+            if isinstance(value, DWARFCrafter) and bytes(child) == bytes(value):
+                return i
+        raise ValueError(f"{value!r} is not in array")
+
+    def count(self, value):
+        """
+        Count how many elements equal value.
+        Only works on array-typed DWARFCrafter fields (DW_TAG_array_type).
+        Raises TypeError if called on a non-array type.
+
+        Example:
+            boss.arr.count(0)
+        """
+        length = self._current_array_length()
+        total = 0
+        for i in range(length):
+            child = self[i]
+            if isinstance(value, (int, float)) and child.value == value:
+                total += 1
+            elif isinstance(value, (bytes, bytearray)) and bytes(child) == bytes(value):
+                total += 1
+            elif isinstance(value, DWARFCrafter) and bytes(child) == bytes(value):
+                total += 1
+        return total
+
 
 class DWARFArrayCrafter:
     """
     A byte-backed array of elements of a single type.
     Supports multi-dimensional indexing with shared backing buffer.
     Created via craft('Foo[4][8]') or craft('Foo', count=N).
+    Separate from DWARFCrafter because this is not a real type in the DWARF info,
+    we must forge it ourselves. We could technically compile the array type and read
+    that DWARF info but that is debatably not a good idea.
     """
     def __init__(self, elf, type_die_offset, dims, backing=None, base_offset=0):
         self._elf = elf

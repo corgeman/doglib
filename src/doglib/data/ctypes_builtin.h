@@ -76,6 +76,7 @@ typedef Elf64_Ehdr         _ct_Elf64_Ehdr;
 typedef Elf64_Phdr         _ct_Elf64_Phdr;
 
 // custom stuff
+// !! only add if it is consistent across all libc versions !!
 typedef struct _IO_jump_t {
     size_t __dummy;
     size_t __dummy2;

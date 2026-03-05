@@ -891,4 +891,680 @@ m.dump()
 
 os.unlink(fname)
 
+# -----------------------------------------------------------------------
+# Comprehensive gap-filling tests
+# -----------------------------------------------------------------------
+import math
+from pwn import cyclic as pwn_cyclic
+
+# ------------------------------------------------------------------
+# Integer truncation: writing a value wider than the field clips it
+# ------------------------------------------------------------------
+ec = headers.craft('EdgeCases')
+ec.small_int = 0xdeadbeef         # unsigned short, 2 bytes → 0xbeef
+assert ec.small_int.value == 0xbeef, \
+    f'truncation: expected 0xbeef, got {hex(ec.small_int.value)}'
+ec.big_int = -1                   # long long, -1 → all 0xff bytes
+assert ec.big_int.value == -1, f'signed: expected -1, got {ec.big_int.value}'
+print('[+] integer truncation: PASSED')
+
+# ------------------------------------------------------------------
+# crafter.value setter (primitive field, direct assignment)
+# ------------------------------------------------------------------
+pf = headers.craft('Basic')
+pf.b.value = 9999
+assert pf.b.value == 9999, f'value setter: expected 9999, got {pf.b.value}'
+print('[+] crafter.value setter: PASSED')
+
+# ------------------------------------------------------------------
+# float() / int() conversions on primitive crafters
+# ------------------------------------------------------------------
+fb2 = headers.craft('FinalBoss')
+fb2.max_hp = 3.5
+assert float(fb2.max_hp) == 3.5, f'float(): expected 3.5, got {float(fb2.max_hp)}'
+fb2.current_state = 7
+assert int(fb2.current_state) == 7, f'int(): expected 7, got {int(fb2.current_state)}'
+print('[+] float()/int() on primitive crafter: PASSED')
+
+# ------------------------------------------------------------------
+# bool() on primitive crafters
+# ------------------------------------------------------------------
+bfb = headers.craft('FinalBoss')
+bfb.current_state = 0
+assert not bool(bfb.current_state), 'bool(0) should be False'
+bfb.current_state = 1
+assert bool(bfb.current_state), 'bool(1) should be True'
+print('[+] bool() on primitive crafter: PASSED')
+
+# ------------------------------------------------------------------
+# bool() on struct-type crafter uses bytes (non-zero → True)
+# ------------------------------------------------------------------
+zero_basic = headers.craft('Basic')
+assert not bool(zero_basic), 'bool(all-zero struct) should be False'
+zero_basic.a = 1
+assert bool(zero_basic), 'bool(non-zero struct) should be True'
+# Zero the field back out and confirm it flips back
+zero_basic.a = 0
+assert not bool(zero_basic), 'bool(re-zeroed struct) should be False'
+print('[+] bool() on struct crafter via bytes: PASSED')
+
+# ------------------------------------------------------------------
+# Comparison operators on primitive crafter
+# ------------------------------------------------------------------
+cmp_fb = headers.craft('FinalBoss')
+cmp_fb.current_state = 42
+assert cmp_fb.current_state == 42
+assert cmp_fb.current_state != 0
+assert cmp_fb.current_state < 100
+assert cmp_fb.current_state <= 42
+assert cmp_fb.current_state > 10
+assert cmp_fb.current_state >= 42
+assert not (cmp_fb.current_state > 100)
+print('[+] comparison operators on crafter: PASSED')
+
+# ------------------------------------------------------------------
+# Division, modulo, divmod on primitive crafter
+# ------------------------------------------------------------------
+div_fb = headers.craft('FinalBoss')
+div_fb.current_state = 17
+assert div_fb.current_state / 4 == 4.25,  f'truediv: {div_fb.current_state / 4}'
+assert div_fb.current_state // 4 == 4,    f'floordiv: {div_fb.current_state // 4}'
+assert div_fb.current_state % 4 == 1,     f'mod: {div_fb.current_state % 4}'
+assert divmod(div_fb.current_state, 4) == (4, 1), \
+    f'divmod: {divmod(div_fb.current_state, 4)}'
+assert 100 / div_fb.current_state == 100 / 17
+assert 100 % div_fb.current_state == 100 % 17
+print('[+] division/modulo/divmod on crafter: PASSED')
+
+# ------------------------------------------------------------------
+# round() / math.floor() / ceil() / trunc()
+# ------------------------------------------------------------------
+rnd_fb = headers.craft('FinalBoss')
+rnd_fb.max_hp = 3.7
+assert round(rnd_fb.max_hp) == 4,           f'round: {round(rnd_fb.max_hp)}'
+assert round(rnd_fb.max_hp, 1) == 3.7
+assert math.floor(rnd_fb.max_hp) == 3,      f'floor: {math.floor(rnd_fb.max_hp)}'
+assert math.ceil(rnd_fb.max_hp) == 4,       f'ceil: {math.ceil(rnd_fb.max_hp)}'
+assert math.trunc(rnd_fb.max_hp) == 3,      f'trunc: {math.trunc(rnd_fb.max_hp)}'
+print('[+] round/floor/ceil/trunc on crafter: PASSED')
+
+# ------------------------------------------------------------------
+# Union memory overlap: write one member, read raw bytes
+# ------------------------------------------------------------------
+um2 = headers.craft('UnionMadness')
+um2.data.coords.x = 0x12345678
+# raw bytes of the union data region should start with 0x12345678 (LE)
+raw_bytes = bytes(um2.data.raw)   # char[8] member of the same union
+assert raw_bytes[:4] == b'\x78\x56\x34\x12', \
+    f'union overlap: expected LE bytes, got {raw_bytes[:4].hex()}'
+print('[+] union memory overlap: PASSED')
+
+# ------------------------------------------------------------------
+# Sub-crafter shares backing: mutating sub is visible in parent
+# ------------------------------------------------------------------
+boss2 = headers.craft('BossFight')
+boss2.b[0].a = ord('M')
+# bytes of the full struct should reflect the change
+parent_bytes = bytes(boss2)
+assert parent_bytes[0] == ord('M'), \
+    f'shared backing: expected M at [0], got {parent_bytes[0]}'
+print('[+] sub-crafter shared backing: PASSED')
+
+# ------------------------------------------------------------------
+# bytes(sub_crafter) is only the sub-field's size, not the full struct
+# ------------------------------------------------------------------
+bf3 = headers.craft('BossFight')
+bf3.b[1].b = 0xCAFE
+sub_bytes = bytes(bf3.b[1])
+assert len(sub_bytes) == headers.sizeof('Basic'), \
+    f'sub bytes size: expected {headers.sizeof("Basic")}, got {len(sub_bytes)}'
+# b is at offsetof(Basic, 'b') = 4 within Basic, so bytes 4-7 of the sub
+assert struct.unpack_from('<i', sub_bytes, 4)[0] == 0xCAFE, \
+    f'sub bytes content wrong: {sub_bytes.hex()}'
+print('[+] bytes(sub_crafter) correct size: PASSED')
+
+# ------------------------------------------------------------------
+# fill() with multi-byte pattern (repeat to fill)
+# ------------------------------------------------------------------
+fill_pat = headers.craft('Basic')
+fill_pat.fill(b'\xde\xad')
+b_pat = bytes(fill_pat)
+# pattern b'\xde\xad' repeated to 12 bytes
+assert b_pat == b'\xde\xad' * 6, f'fill multi-byte: {b_pat.hex()}'
+print('[+] fill() multi-byte pattern: PASSED')
+
+# ------------------------------------------------------------------
+# fill() error paths
+# ------------------------------------------------------------------
+try:
+    headers.craft('Basic').fill(256)
+    assert False, 'fill(256) should raise ValueError'
+except ValueError:
+    pass
+try:
+    headers.craft('Basic').fill(b'')
+    assert False, 'fill(b"") should raise ValueError'
+except ValueError:
+    pass
+try:
+    headers.craft('Basic').fill(1.5)
+    assert False, 'fill(1.5) should raise TypeError'
+except TypeError:
+    pass
+print('[+] fill() error paths: PASSED')
+
+# ------------------------------------------------------------------
+# cyclic() correctness
+# ------------------------------------------------------------------
+cyc = headers.craft('Basic')
+cyc.cyclic()
+expected_cyc = pwn_cyclic(headers.sizeof('Basic'))
+assert bytes(cyc) == expected_cyc, \
+    f'cyclic: {bytes(cyc).hex()} != {expected_cyc.hex()}'
+cyc_arr = headers.craft('int[4]')
+cyc_arr.cyclic()
+assert bytes(cyc_arr) == pwn_cyclic(16)
+print('[+] cyclic() correctness: PASSED')
+
+# ------------------------------------------------------------------
+# copy() independence on a sub-view
+# ------------------------------------------------------------------
+boss3 = headers.craft('BossFight')
+boss3.b[0].a = ord('X')
+boss3.b[1].a = ord('Y')
+sub_copy = boss3.b[0].copy()   # copy of the first Basic element
+sub_copy.a = ord('Z')          # mutate the copy
+# original should be unchanged
+assert boss3.b[0].a.value == ord('X'), \
+    f'copy sub-view: boss original changed! got {chr(boss3.b[0].a.value)}'
+# copy should have new value
+assert sub_copy.a.value == ord('Z'), \
+    f'copy sub-view: copy not updated, got {chr(sub_copy.a.value)}'
+print('[+] copy() of sub-view independence: PASSED')
+
+# ------------------------------------------------------------------
+# items() / dump() raise TypeError on primitive field
+# ------------------------------------------------------------------
+prim = headers.craft('Basic').a   # a DWARFCrafter for 'char'
+try:
+    list(prim.items())
+    assert False, 'items() on primitive should raise TypeError'
+except TypeError:
+    pass
+try:
+    prim.dump()
+    assert False, 'dump() on primitive should raise TypeError'
+except TypeError:
+    pass
+print('[+] items()/dump() on primitive raise TypeError: PASSED')
+
+# ------------------------------------------------------------------
+# DWARFEnum: iteration and missing-constant error
+# ------------------------------------------------------------------
+state2 = headers.enum('State')
+enum_items = dict(state2)   # __iter__ yields (name, value) pairs
+assert 'IDLE' in enum_items and enum_items['IDLE'] == 0
+assert 'CRASHED' in enum_items and enum_items['CRASHED'] == -1
+try:
+    _ = state2.NONEXISTENT
+    assert False, 'Missing enum constant should raise AttributeError'
+except AttributeError:
+    pass
+print('[+] DWARFEnum iteration + missing constant error: PASSED')
+
+# ------------------------------------------------------------------
+# DWARFEnum repr contains the constants
+# ------------------------------------------------------------------
+assert 'IDLE' in repr(state2) and 'CRASHED' in repr(state2)
+print('[+] DWARFEnum repr: PASSED')
+
+# ------------------------------------------------------------------
+# DWARFArray slice on a bounded cast
+# ------------------------------------------------------------------
+bounded = headers.cast('Basic[5]', 0x3000)
+sliced_addrs = bounded[1:4]
+assert isinstance(sliced_addrs, list) and len(sliced_addrs) == 3
+bs = headers.sizeof('Basic')
+assert int(sliced_addrs[0]) == 0x3000 + 1 * bs
+assert int(sliced_addrs[2]) == 0x3000 + 3 * bs
+print('[+] DWARFArray slice on bounded cast: PASSED')
+
+# ------------------------------------------------------------------
+# DWARFArray slice on unbounded pointer raises TypeError
+# ------------------------------------------------------------------
+unb = headers.cast('int *', 0x4000)
+try:
+    _ = unb[1:3]
+    assert False, 'Slice on unbounded pointer should raise TypeError'
+except TypeError:
+    pass
+print('[+] DWARFArray slice on unbounded raises TypeError: PASSED')
+
+# ------------------------------------------------------------------
+# DWARFArray len() on unbounded raises TypeError
+# ------------------------------------------------------------------
+try:
+    len(unb)
+    assert False, 'len() on unbounded pointer should raise TypeError'
+except TypeError:
+    pass
+print('[+] DWARFArray len() on unbounded raises TypeError: PASSED')
+
+# ------------------------------------------------------------------
+# DWARFAddress.field on non-struct type raises AttributeError
+# ------------------------------------------------------------------
+int_addr = headers.cast('int', 0x5000)
+try:
+    _ = int_addr.somefield
+    assert False, 'field access on int DWARFAddress should raise AttributeError'
+except AttributeError:
+    pass
+print('[+] DWARFAddress.field on non-struct raises AttributeError: PASSED')
+
+# ------------------------------------------------------------------
+# DWARFAddress[i] on a non-array, non-pointer type raises TypeError
+# ------------------------------------------------------------------
+try:
+    _ = int_addr[0]
+    assert False, 'index on non-array DWARFAddress should raise TypeError'
+except TypeError:
+    pass
+print('[+] DWARFAddress[i] on non-array raises TypeError: PASSED')
+
+# ------------------------------------------------------------------
+# craft('int *') raises ValueError (can't craft pointer types)
+# ------------------------------------------------------------------
+try:
+    headers.craft('int *')
+    assert False, "craft('int *') should raise ValueError"
+except ValueError:
+    pass
+print("[+] craft('int *') raises ValueError: PASSED")
+
+# ------------------------------------------------------------------
+# cast('int **', addr) raises ValueError (multi-level pointer unsupported)
+# ------------------------------------------------------------------
+try:
+    headers.cast('int **', 0x1000)
+    assert False, "cast('int **') should raise ValueError"
+except ValueError:
+    pass
+print("[+] cast('int **') raises ValueError: PASSED")
+
+# ------------------------------------------------------------------
+# sizeof('int *') returns pointer width (8 on 64-bit)
+# ------------------------------------------------------------------
+ptr_size = headers.sizeof('int *')
+assert ptr_size == 8, f'sizeof int*: expected 8, got {ptr_size}'
+print('[+] sizeof pointer type: PASSED')
+
+# ------------------------------------------------------------------
+# describe() on non-struct raises ValueError
+# ------------------------------------------------------------------
+try:
+    headers.describe('int')
+    assert False, "describe('int') should raise ValueError"
+except ValueError:
+    pass
+print('[+] describe() on non-struct raises ValueError: PASSED')
+
+# ------------------------------------------------------------------
+# offsetof() on invalid field path raises ValueError
+# ------------------------------------------------------------------
+try:
+    headers.offsetof('Basic', 'nonexistent')
+    assert False, "offsetof on nonexistent field should raise ValueError"
+except ValueError:
+    pass
+print('[+] offsetof() invalid field raises ValueError: PASSED')
+
+# ------------------------------------------------------------------
+# parse() with fewer bytes than struct → zero-pad remainder
+# ------------------------------------------------------------------
+short_data = b'\x41\x00\x00\x00'   # only 4 bytes, Basic is 12
+short_parsed = headers.parse('Basic', short_data)
+b_bytes = bytes(short_parsed)
+assert b_bytes[:4] == short_data, f'parse short: first 4 wrong {b_bytes[:4].hex()}'
+assert b_bytes[4:] == b'\x00' * (headers.sizeof('Basic') - 4), \
+    f'parse short: tail not zero {b_bytes[4:].hex()}'
+print('[+] parse() with fewer bytes zero-pads: PASSED')
+
+# ------------------------------------------------------------------
+# parse() with more bytes than struct → excess is ignored
+# ------------------------------------------------------------------
+long_data = bytes(range(64))
+long_parsed = headers.parse('Basic', long_data)
+assert len(bytes(long_parsed)) == headers.sizeof('Basic'), \
+    f'parse long: size wrong {len(bytes(long_parsed))}'
+assert bytes(long_parsed) == long_data[:headers.sizeof('Basic')], \
+    f'parse long: content wrong'
+print('[+] parse() with extra bytes truncates: PASSED')
+
+# ------------------------------------------------------------------
+# Negative int written to unsigned field wraps via mask
+# ------------------------------------------------------------------
+ul = headers.craft('EdgeCases')
+ul.small_int = -1                  # unsigned short, -1 → 0xffff
+assert ul.small_int.value == 0xffff, \
+    f'neg→unsigned: expected 0xffff, got {hex(ul.small_int.value)}'
+print('[+] negative int to unsigned field wraps: PASSED')
+
+# ------------------------------------------------------------------
+# Augmented assign only writes back when performed on a member access
+# expression; a detached local variable is NOT written back
+# ------------------------------------------------------------------
+aa = headers.craft('FinalBoss')
+aa.current_state = 10
+local = aa.current_state           # DWARFCrafter
+local += 99                        # local becomes plain int 109
+assert type(local) == int, f'detached augmented assign: local should be int, got {type(local)}'
+assert aa.current_state.value == 10, \
+    f'detached augmented assign: parent unexpectedly changed to {aa.current_state.value}'
+# member-expression augmented assign DOES write back
+aa.current_state += 5
+assert aa.current_state.value == 15, \
+    f'member augmented assign: expected 15, got {aa.current_state.value}'
+print('[+] augmented assign semantics: PASSED')
+
+# ------------------------------------------------------------------
+# crafter.__doc__ is a Python attribute, not a struct field
+# ------------------------------------------------------------------
+doc_c = headers.craft('Basic')
+doc_c.__doc__ = 'hello'            # true dunder → Python attribute
+assert doc_c.__doc__ == 'hello'
+# it must NOT have silently written to the backing buffer
+assert bytes(doc_c) == bytes(headers.sizeof('Basic')), \
+    f'__doc__ assignment corrupted backing: {bytes(doc_c).hex()}'
+print('[+] true dunder attr is Python, not struct field: PASSED')
+
+# ------------------------------------------------------------------
+# DWARFArrayCrafter sub-view (row) shares backing with parent 2D array
+# ------------------------------------------------------------------
+parent_2d = headers.craft('int[3][4]')
+row1 = parent_2d[1]               # DWARFArrayCrafter for int[4], offset=16
+row1[0] = 0xABCD
+# parent should see the change
+assert parent_2d[1][0].value == 0xABCD, \
+    f'2D sub-view sharing: parent unchanged, got {parent_2d[1][0].value}'
+print('[+] DWARFArrayCrafter 2D sub-view shares parent backing: PASSED')
+
+# ------------------------------------------------------------------
+# DWARFArrayCrafter.fill() on 2D array fills all elements
+# ------------------------------------------------------------------
+fill_2d = headers.craft('int[3][4]')
+fill_2d.fill(0x42)
+assert all(fill_2d[r][c].value == 0x42
+           for r in range(3) for c in range(4)), \
+    f'fill 2D: not all elements 0x42'
+print('[+] DWARFArrayCrafter.fill() on 2D array: PASSED')
+
+# ------------------------------------------------------------------
+# DWARFArrayCrafter.values() on char array returns integers (not chars)
+# Note: array members accessed via struct __getattr__ are DWARFCrafter objects,
+# not DWARFArrayCrafter, so we craft the char array directly here.
+# ------------------------------------------------------------------
+char_arr = headers.craft('char[5]')
+for i in range(5):
+    char_arr[i] = ord('A') + i
+vals_chars = char_arr.values()
+assert vals_chars == [65, 66, 67, 68, 69], \
+    f'values() chars: expected [65..69], got {vals_chars}'
+print('[+] DWARFArrayCrafter.values() on char array: PASSED')
+
+# ------------------------------------------------------------------
+# C64 built-in types: sizeof well-known stdint types
+# ------------------------------------------------------------------
+assert C64.sizeof('uint64_t') == 8,  f'uint64_t: {C64.sizeof("uint64_t")}'
+assert C64.sizeof('uint32_t') == 4,  f'uint32_t: {C64.sizeof("uint32_t")}'
+assert C64.sizeof('uint8_t')  == 1,  f'uint8_t: {C64.sizeof("uint8_t")}'
+assert C64.sizeof('int64_t')  == 8,  f'int64_t: {C64.sizeof("int64_t")}'
+assert C64.sizeof('size_t')   == 8,  f'size_t: {C64.sizeof("size_t")}'
+assert C64.sizeof('ptrdiff_t')== 8,  f'ptrdiff_t: {C64.sizeof("ptrdiff_t")}'
+print('[+] C64 built-in stdint type sizes: PASSED')
+
+# ------------------------------------------------------------------
+# DWARFCrafter hash on primitive works; on struct raises TypeError
+# ------------------------------------------------------------------
+hsh = headers.craft('FinalBoss')
+hsh.current_state = 42
+prim_hash = hash(hsh.current_state)
+assert isinstance(prim_hash, int), f'hash(primitive): expected int, got {type(prim_hash)}'
+d = {hsh.current_state: 'test'}   # usable as dict key
+assert d[42] == 'test'
+print('[+] hash(primitive crafter) works: PASSED')
+# struct/union types are mutable, so hash is intentionally unsupported
+# (same reason Python's list is unhashable)
+try:
+    hash(headers.craft('Basic'))
+    assert False, 'hash(struct crafter) should raise TypeError'
+except TypeError:
+    pass
+print('[+] hash(struct crafter) raises TypeError: PASSED')
+
+# ------------------------------------------------------------------
+# DWARFArrayCrafter repr contains type info
+# ------------------------------------------------------------------
+repr_arr = headers.craft('int[3][4]')
+r = repr(repr_arr)
+assert 'int' in r and '3' in r and '4' in r, f'DWARFArrayCrafter repr: {r}'
+print('[+] DWARFArrayCrafter repr contains type info: PASSED')
+
+# ------------------------------------------------------------------
+# DWARFCrafter.__format__ on struct type (non-primitive) returns hex str
+# ------------------------------------------------------------------
+fmt_struct = headers.craft('Basic')
+fmt_struct.fill(0x41)
+formatted = f'{fmt_struct}'   # empty format_spec
+assert isinstance(formatted, str), f'__format__ struct: not a str: {type(formatted)}'
+print('[+] __format__ on struct crafter: PASSED')
+
+# ------------------------------------------------------------------
+# Pointer field: read/write and p64() compatibility
+# ------------------------------------------------------------------
+af2 = headers.craft('ArrayFun')
+af2.ptr = 0xdeadbeef12345678
+assert af2.ptr.value == 0xdeadbeef12345678, \
+    f'ptr field value: {hex(af2.ptr.value)}'
+assert p64(af2.ptr) == p64(0xdeadbeef12345678), \
+    f'p64(ptr field) mismatch'
+print('[+] pointer field read/write and p64(): PASSED')
+
+# ------------------------------------------------------------------
+# bytes assigned to field larger than field → truncated (not OOB)
+# ------------------------------------------------------------------
+trunc_c = headers.craft('Basic')
+trunc_c.a = b'\x41\x42\x43\x44\x45'  # 5 bytes into 1-byte char
+assert bytes(trunc_c)[0] == 0x41, \
+    f'bytes truncation: expected 0x41 at [0], got {bytes(trunc_c)[0]}'
+assert bytes(trunc_c)[1:4] == b'\x00\x00\x00', \
+    f'bytes truncation: subsequent bytes should be zero'
+print('[+] bytes assignment truncated to field size: PASSED')
+
+# ------------------------------------------------------------------
+# bytes assigned to field shorter than field → zero-padded
+# ------------------------------------------------------------------
+short_c = headers.craft('Basic')
+short_c.b = b'\xef'                  # 1 byte into 4-byte int
+assert bytes(short_c)[4] == 0xef, \
+    f'bytes padding: expected 0xef at [4], got {bytes(short_c)[4]}'
+assert bytes(short_c)[5:8] == b'\x00\x00\x00', \
+    f'bytes padding: remaining bytes should be zero'
+print('[+] bytes assignment zero-pads to field size: PASSED')
+
+# ------------------------------------------------------------------
+# DWARFCrafter.values() — primitive, array field, struct
+# ------------------------------------------------------------------
+val_fb = headers.craft('FinalBoss')
+val_fb.current_state = 2          # enum field (primitive)
+assert val_fb.current_state.values() == 2, \
+    f'values() on primitive: {val_fb.current_state.values()}'
+
+val_fb.matrix[0][0] = 10
+val_fb.matrix[0][1] = 20
+val_fb.matrix[1][2] = 99
+nested = val_fb.matrix.values()   # array field → nested list
+assert nested == [[10, 20, 0], [0, 0, 99]], \
+    f'values() on array field: {nested}'
+
+struct_vals = val_fb.values()      # struct → dict
+assert isinstance(struct_vals, dict), f'values() on struct should be dict: {type(struct_vals)}'
+assert 'current_state' in struct_vals and 'matrix' in struct_vals, \
+    f'values() dict missing keys: {struct_vals.keys()}'
+assert struct_vals['matrix'] == [[10, 20, 0], [0, 0, 99]], \
+    f'values() nested matrix: {struct_vals["matrix"]}'
+print('[+] DWARFCrafter.values(): PASSED')
+
+# ------------------------------------------------------------------
+# DWARFCrafter.index() on array-typed field
+# ------------------------------------------------------------------
+idx_fb = headers.craft('FinalBoss')
+idx_fb.matrix[0][0] = 0
+idx_fb.matrix[0][1] = 7
+idx_fb.matrix[0][2] = 7
+assert idx_fb.matrix[0].index(7) == 1, \
+    f'index(7) on [0,7,7]: {idx_fb.matrix[0].index(7)}'
+assert idx_fb.matrix[0].index(7, 2) == 2, \
+    f'index(7, start=2) on [0,7,7]: {idx_fb.matrix[0].index(7, 2)}'
+try:
+    idx_fb.matrix[0].index(99)
+    assert False, 'index() missing value should raise ValueError'
+except ValueError:
+    pass
+# index() on non-array raises TypeError
+try:
+    idx_fb.current_state.index(1)
+    assert False, 'index() on non-array should raise TypeError'
+except TypeError:
+    pass
+print('[+] DWARFCrafter.index() on array field: PASSED')
+
+# ------------------------------------------------------------------
+# DWARFCrafter.count() on array-typed field
+# ------------------------------------------------------------------
+cnt_fb = headers.craft('FinalBoss')
+cnt_fb.matrix[1][0] = 5
+cnt_fb.matrix[1][1] = 5
+cnt_fb.matrix[1][2] = 3
+assert cnt_fb.matrix[1].count(5) == 2, \
+    f'count(5) on [5,5,3]: {cnt_fb.matrix[1].count(5)}'
+assert cnt_fb.matrix[1].count(3) == 1, \
+    f'count(3) on [5,5,3]: {cnt_fb.matrix[1].count(3)}'
+assert cnt_fb.matrix[1].count(0) == 0, \
+    f'count(0) on [5,5,3]: {cnt_fb.matrix[1].count(0)}'
+print('[+] DWARFCrafter.count() on array field: PASSED')
+
+# ------------------------------------------------------------------
+# DWARFCrafter.__eq__ between struct crafters (compare by bytes)
+# ------------------------------------------------------------------
+eq_a = headers.craft('Basic')
+eq_b = headers.craft('Basic')
+eq_a.a = 0x41
+eq_b.a = 0x41
+assert eq_a == eq_b, 'same-content structs should be equal'
+eq_b.a = 0x42
+assert eq_a != eq_b, 'different-content structs should be unequal'
+# also against bytes
+assert eq_a == bytes(eq_a), 'struct == bytes(struct) should be True'
+print('[+] DWARFCrafter.__eq__ for struct types by bytes: PASSED')
+
+# ------------------------------------------------------------------
+# DWARFCrafter.__add__ for same struct type → DWARFArrayCrafter
+# ------------------------------------------------------------------
+from doglib.extelf import DWARFArrayCrafter
+add_a = headers.craft('Basic')
+add_b = headers.craft('Basic')
+add_a.a = 0x11
+add_b.a = 0x22
+combined = add_a + add_b
+assert isinstance(combined, DWARFArrayCrafter), \
+    f'struct + struct should be DWARFArrayCrafter, got {type(combined)}'
+assert len(combined) == 2, f'combined length: {len(combined)}'
+assert combined[0].a.value == 0x11, f'combined[0].a: {combined[0].a.value}'
+assert combined[1].a.value == 0x22, f'combined[1].a: {combined[1].a.value}'
+# both sides must be same type
+try:
+    add_a + headers.craft('FinalBoss')
+    assert False, 'struct + different-struct should raise TypeError'
+except TypeError:
+    pass
+print('[+] DWARFCrafter.__add__ for structs: PASSED')
+
+# ------------------------------------------------------------------
+# DWARFCrafter.__mul__ for struct type → DWARFArrayCrafter of n copies
+# ------------------------------------------------------------------
+mul_base = headers.craft('Basic')
+mul_base.a = 0x42       # fits in signed char (< 128)
+mul_base.b = 0x1234
+arr3 = mul_base * 3
+assert isinstance(arr3, DWARFArrayCrafter), \
+    f'struct * 3 should be DWARFArrayCrafter, got {type(arr3)}'
+assert len(arr3) == 3, f'struct * 3 length: {len(arr3)}'
+assert arr3[0].a.value == 0x42, f'arr3[0].a: {arr3[0].a.value}'
+assert arr3[2].b.value == 0x1234, f'arr3[2].b: {arr3[2].b.value}'
+# __rmul__ works too
+arr2r = 2 * mul_base
+assert len(arr2r) == 2, f'2 * struct length: {len(arr2r)}'
+# * 0 gives empty array
+arr0 = mul_base * 0
+assert isinstance(arr0, DWARFArrayCrafter) and len(arr0) == 0, \
+    f'struct * 0 length: {len(arr0)}'
+# negative raises ValueError
+try:
+    mul_base * -1
+    assert False, 'struct * -1 should raise ValueError'
+except ValueError:
+    pass
+# copies are independent (backing is separate)
+arr3[0].a = 0x11
+assert arr3[1].a.value == 0x42, \
+    f'struct * n copies should be independent, got {arr3[1].a.value}'
+print('[+] DWARFCrafter.__mul__ for structs: PASSED')
+
+# ------------------------------------------------------------------
+# iadd / imul rebind variable to DWARFArrayCrafter
+# ------------------------------------------------------------------
+iadd_x = headers.craft('Basic')
+iadd_x.a = 0x10
+iadd_y = headers.craft('Basic')
+iadd_y.a = 0x20
+iadd_x += iadd_y
+assert isinstance(iadd_x, DWARFArrayCrafter) and len(iadd_x) == 2
+assert iadd_x[0].a.value == 0x10 and iadd_x[1].a.value == 0x20
+print('[+] DWARFCrafter.__iadd__ for structs: PASSED')
+
+# ------------------------------------------------------------------
+# DWARFCrafter.__radd__ — numeric path (triggered by int + field)
+# and struct path (triggered directly, mirrors __add__)
+# ------------------------------------------------------------------
+radd_fb = headers.craft('FinalBoss')
+radd_fb.current_state = 5
+# Numeric __radd__: int.__add__(DWARFCrafter) returns NotImplemented,
+# so Python calls DWARFCrafter.__radd__(int).
+assert 10 + radd_fb.current_state == 15, \
+    f'10 + field: expected 15, got {10 + radd_fb.current_state}'
+
+# Struct __radd__: call directly because Python always prefers __add__ when both
+# sides share the same class.  This mirrors what Python does when the right
+# operand is a subclass (subclass-priority rule).
+radd_a = headers.craft('Basic')
+radd_b = headers.craft('Basic')
+radd_a.a = 0x33
+radd_b.a = 0x44
+# radd_b.__radd__(radd_a) → other=radd_a comes first, self=radd_b comes second
+radd_result = radd_b.__radd__(radd_a)
+assert isinstance(radd_result, DWARFArrayCrafter), \
+    f'__radd__ struct path: expected DWARFArrayCrafter, got {type(radd_result)}'
+assert len(radd_result) == 2
+assert radd_result[0].a.value == 0x33, \
+    f'__radd__[0].a: {radd_result[0].a.value}'   # other (left) first
+assert radd_result[1].a.value == 0x44, \
+    f'__radd__[1].a: {radd_result[1].a.value}'   # self (right) second
+# Different struct types via __radd__ fall back to numeric → TypeError
+try:
+    radd_a.__radd__(headers.craft('FinalBoss'))
+    assert False, '__radd__ with different struct type should raise TypeError'
+except TypeError:
+    pass
+print('[+] DWARFCrafter.__radd__ numeric and struct paths: PASSED')
+
 io.close()
