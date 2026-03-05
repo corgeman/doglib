@@ -693,4 +693,202 @@ print('partial list: PASSED')
 
 log.success("All feature tests passed!")
 
+# -----------------------------------------------------------------------
+# DWARFArrayCrafter list-like interface tests
+# -----------------------------------------------------------------------
+
+# --- __contains__ (1D scalar deep-search) ---
+ac = C64.craft('int[5]')
+ac[2] = 42
+assert 42 in ac,  '__contains__: 42 should be found'
+assert 0  in ac,  '__contains__: 0 (default) should be found'
+assert 99 not in ac, '__contains__: 99 should not be found'
+log.info('[+] DWARFArrayCrafter __contains__ 1D: PASSED')
+
+# --- __contains__ (2D deep scalar search) ---
+grid = C64.craft('int[3][3]')
+grid[1][2] = 777
+assert 777 in grid, '__contains__ 2D: deep scan should find 777'
+assert 999 not in grid, '__contains__ 2D: 999 not in grid'
+log.info('[+] DWARFArrayCrafter __contains__ 2D deep: PASSED')
+
+# --- __contains__ (row match via list) ---
+grid2 = C64.craft('int[3][3]')
+grid2[2] = [10, 20, 30]
+assert [10, 20, 30] in grid2, '__contains__: row [10,20,30] should match'
+assert [10, 20, 31] not in grid2, '__contains__: [10,20,31] should not match'
+log.info('[+] DWARFArrayCrafter __contains__ row match: PASSED')
+
+# --- __eq__ (1D vs list) ---
+eq1 = C64.craft('int[3]')
+eq1[0] = 1; eq1[1] = 2; eq1[2] = 3
+assert eq1 == [1, 2, 3], '__eq__: [1,2,3] should match'
+assert not (eq1 == [1, 2, 4]), '__eq__: [1,2,4] should not match'
+assert eq1 != [1, 2, 4], '__ne__: should be True'
+log.info('[+] DWARFArrayCrafter __eq__ 1D: PASSED')
+
+# --- __eq__ (1D vs DWARFArrayCrafter) ---
+eq2 = C64.craft('int[3]')
+eq2[0] = 1; eq2[1] = 2; eq2[2] = 3
+assert eq1 == eq2, '__eq__: identical arrays should be equal'
+eq2[0] = 99
+assert eq1 != eq2, '__eq__: modified array should differ'
+log.info('[+] DWARFArrayCrafter __eq__ crafter: PASSED')
+
+# --- __eq__ (2D vs nested list) ---
+grid3 = C64.craft('int[2][2]')
+grid3[0] = [1, 2]; grid3[1] = [3, 4]
+assert grid3 == [[1,2],[3,4]], '__eq__ 2D vs list'
+assert not (grid3 == [[1,2],[3,5]]), '__eq__ 2D mismatch'
+log.info('[+] DWARFArrayCrafter __eq__ 2D: PASSED')
+
+# --- __add__ ---
+a1 = C64.craft('int[3]')
+a1[0] = 10; a1[1] = 20; a1[2] = 30
+a2 = C64.craft('int[2]')
+a2[0] = 40; a2[1] = 50
+a3 = a1 + a2
+assert len(a3) == 5, f'__add__: expected len 5, got {len(a3)}'
+assert a3 == [10, 20, 30, 40, 50], f'__add__: wrong values {a3.values()}'
+# verify independence: mutating a3 doesn't touch a1 or a2
+a3[0] = 99
+assert a1[0].value == 10, '__add__: a1 should be unaffected'
+assert a2[0].value == 40, '__add__: a2 should be unaffected'
+log.info('[+] DWARFArrayCrafter __add__: PASSED')
+
+# --- __iadd__ ---
+ia = C64.craft('int[2]')
+ia[0] = 1; ia[1] = 2
+ib = C64.craft('int[2]')
+ib[0] = 3; ib[1] = 4
+ia += ib
+assert len(ia) == 4 and ia == [1, 2, 3, 4], f'__iadd__: {ia.values()}'
+log.info('[+] DWARFArrayCrafter __iadd__: PASSED')
+
+# --- __add__ type mismatch raises TypeError ---
+bad_a = C64.craft('int[2]')
+bad_b = C64.craft('char[2]')
+try:
+    _ = bad_a + bad_b
+    assert False, '__add__ mismatch should raise TypeError'
+except TypeError:
+    pass
+log.info('[+] DWARFArrayCrafter __add__ type mismatch: PASSED')
+
+# --- __mul__ ---
+m1 = C64.craft('int[3]')
+m1[0] = 7; m1[1] = 8; m1[2] = 9
+m3 = m1 * 3
+assert len(m3) == 9, f'__mul__: expected 9, got {len(m3)}'
+assert m3 == [7, 8, 9, 7, 8, 9, 7, 8, 9], f'__mul__: {m3.values()}'
+# independence: modifying one repetition must not affect others
+m3[0] = 99
+assert m3[3].value == 7, '__mul__: copies are independent'
+assert m3[6].value == 7, '__mul__: copies are independent'
+log.info('[+] DWARFArrayCrafter __mul__: PASSED')
+
+# --- __rmul__ ---
+r1 = C64.craft('int[2]')
+r1[0] = 5; r1[1] = 6
+r3 = 4 * r1
+assert len(r3) == 8 and r3 == [5, 6, 5, 6, 5, 6, 5, 6], f'__rmul__: {r3.values()}'
+log.info('[+] DWARFArrayCrafter __rmul__: PASSED')
+
+# --- __mul__ by 0 ---
+m0 = C64.craft('int[4]') * 0
+assert len(m0) == 0, '__mul__ by 0 should give empty array'
+log.info('[+] DWARFArrayCrafter __mul__ by 0: PASSED')
+
+# --- index() 1D ---
+idx = C64.craft('int[5]')
+idx[0] = 10; idx[1] = 20; idx[2] = 10; idx[3] = 30; idx[4] = 20
+assert idx.index(10) == 0, 'index: first 10 at 0'
+assert idx.index(20) == 1, 'index: first 20 at 1'
+assert idx.index(30) == 3, 'index: 30 at 3'
+assert idx.index(10, 1) == 2, 'index: 10 after start=1 at 2'
+assert idx.index(20, 2, 5) == 4, 'index: 20 in [2,5) at 4'
+try:
+    idx.index(99)
+    assert False, 'index: missing value should raise ValueError'
+except ValueError:
+    pass
+log.info('[+] DWARFArrayCrafter index() 1D: PASSED')
+
+# --- index() 2D (row match) ---
+ig = C64.craft('int[4][2]')
+ig[0] = [1, 2]; ig[1] = [3, 4]; ig[2] = [1, 2]; ig[3] = [5, 6]
+assert ig.index([1, 2]) == 0, 'index 2D: first [1,2] at 0'
+assert ig.index([1, 2], 1) == 2, 'index 2D: [1,2] after start=1 at 2'
+assert ig.index([3, 4]) == 1
+log.info('[+] DWARFArrayCrafter index() 2D: PASSED')
+
+# --- count() 1D ---
+cnt = C64.craft('int[6]')
+cnt[0] = 5; cnt[1] = 3; cnt[2] = 5; cnt[3] = 5; cnt[4] = 0; cnt[5] = 3
+assert cnt.count(5) == 3, f'count: expected 3, got {cnt.count(5)}'
+assert cnt.count(3) == 2
+assert cnt.count(0) == 1
+assert cnt.count(99) == 0
+log.info('[+] DWARFArrayCrafter count() 1D: PASSED')
+
+# --- count() 2D (row match) ---
+cg = C64.craft('int[4][2]')
+cg[0] = [1, 2]; cg[1] = [3, 4]; cg[2] = [1, 2]; cg[3] = [1, 2]
+assert cg.count([1, 2]) == 3, f'count 2D: expected 3 rows [1,2], got {cg.count([1,2])}'
+assert cg.count([3, 4]) == 1
+assert cg.count([0, 0]) == 0
+log.info('[+] DWARFArrayCrafter count() 2D: PASSED')
+
+# --- existing features: slice returns list of children ---
+sl = C64.craft('int[6]')
+for i in range(6): sl[i] = i * 10
+sliced = sl[2:5]
+assert isinstance(sliced, list) and len(sliced) == 3
+assert [x.value for x in sliced] == [20, 30, 40], f'slice: {[x.value for x in sliced]}'
+log.info('[+] DWARFArrayCrafter slice: PASSED')
+
+# --- existing features: slice assignment ---
+sa = C64.craft('int[5]')
+sa[1:4] = [11, 22, 33]
+assert [sa[i].value for i in range(5)] == [0, 11, 22, 33, 0], \
+    f'slice assign: {[sa[i].value for i in range(5)]}'
+log.info('[+] DWARFArrayCrafter slice assignment: PASSED')
+
+# bug: custom __setattr__ previously skipped dunder-looking attributes,
+#    (and attempt to super().__setattr__(field))
+# but some internal C attributes also look like dunders!
+hdr = '''
+typedef struct testing {
+    unsigned long long __dummy;
+    unsigned long long __dummy2;
+    unsigned long long __finish;
+} testing;
+'''
+with tempfile.NamedTemporaryFile(suffix='.h', mode='w', delete=False) as f:
+    f.write(hdr); fname = f.name
+
+from doglib.extelf import CHeader
+j = CHeader(fname)
+m = j.craft('testing')
+
+# write via __setattr__
+m.__finish = 0x1234568
+assert m.__finish.value == 0x1234568, f'__finish read: {m.__finish.value}'
+print('m.__finish = 0x1234568: PASSED')
+
+m.__dummy = 0x4949
+assert m.__dummy.value == 0x4949
+print('m.__dummy = 0x4949: PASSED')
+
+b = bytes(m)
+import struct
+vals = struct.unpack_from('<QQQ', b)
+assert vals[0] == 0x4949,     f'__dummy in bytes: {hex(vals[0])}'
+assert vals[2] == 0x1234568,  f'__finish in bytes: {hex(vals[2])}'
+print('bytes() correct: PASSED')
+
+m.dump()
+
+os.unlink(fname)
+
 io.close()

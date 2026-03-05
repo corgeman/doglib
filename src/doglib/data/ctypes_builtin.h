@@ -75,3 +75,32 @@ typedef struct link_map    _ct_link_map;
 typedef Elf64_Ehdr         _ct_Elf64_Ehdr;
 typedef Elf64_Phdr         _ct_Elf64_Phdr;
 
+// custom stuff
+typedef struct _IO_jump_t {
+    size_t __dummy;
+    size_t __dummy2;
+    void (*__finish)(FILE *, int);
+    int (*__overflow)(FILE *, int);
+    int (*__underflow)(FILE *);
+    int (*__uflow)(FILE *);
+    int (*__pbackfail)(FILE *, int);
+    size_t (*__xsputn)(FILE *, const void *, size_t);
+    size_t (*__xsgetn)(FILE *, void *, size_t);
+    __off64_t (*__seekoff)(FILE *, __off64_t, int, int);
+    __off64_t (*__seekpos)(FILE *, __off64_t, int);
+    FILE * (*__setbuf)(FILE *, char *, ssize_t);
+    int (*__sync)(FILE *);
+    int (*__doallocate)(FILE *);
+    ssize_t (*__read)(FILE *, void *, ssize_t);
+    ssize_t (*__write)(FILE *, const void *, ssize_t);
+    __off64_t (*__seek)(FILE *, __off64_t, int);
+    int (*__close)(FILE *);
+    int (*__stat)(FILE *, void *);
+    int (*__showmanyc)(FILE *);
+    void (*__imbue)(FILE *, void *);
+} _ct_IO_jump_t;
+
+typedef struct _IO_FILE_plus {
+    FILE file;
+    const struct _IO_jump_t *vtable;
+} _ct_IO_FILE_plus;

@@ -77,7 +77,7 @@ class DWARFAddress(int):
         return DWARFAddress((int(self) - int(other)) & mask, self._elf, self._type_die_offset, self._subrange_start)
 
     def __getattr__(self, name):
-        if name.startswith('_'):
+        if name.startswith('__') and name.endswith('__'):
             raise AttributeError(name)
 
         dwarfinfo = self._elf._get_dwarfinfo()
@@ -218,7 +218,7 @@ class DWARFEnum:
                         self._constants[name_attr.value.decode('utf-8')] = val_attr.value
 
     def __getattr__(self, name):
-        if name.startswith('_'):
+        if name.startswith('__') and name.endswith('__'):
             raise AttributeError(name)
         if name in self._constants:
             return self._constants[name]
@@ -543,13 +543,21 @@ class DWARFCrafter:
         return remaining[0]
 
     def __getattr__(self, name):
-        if name.startswith('_'):
+        # Block true Python dunders (__foo__) only; C field names like __finish
+        # or _private start with underscore but are valid struct members.
+        if name.startswith('__') and name.endswith('__'):
             raise AttributeError(name)
-        member_offset, member_type_die = self._resolve_field(name)
+        try:
+            member_offset, member_type_die = self._resolve_field(name)
+        except AttributeError:
+            raise AttributeError(name)
         return DWARFCrafter(self._elf, member_type_die.offset, self._backing, self._offset + member_offset)
 
     def __setattr__(self, name, value):
-        if name.startswith('_'):
+        # Only bypass field resolution for true Python dunders (__foo__); C struct
+        # fields named __finish, _private, etc. should still write to the backing buffer.
+        # TODO: this is potentially problematic. C field names like __foo__ will not be written to.
+        if name.startswith('__') and name.endswith('__'):
             return super().__setattr__(name, value)
         if name == 'value':
             die = self._elf._get_dwarfinfo().get_DIE_from_refaddr(self._type_die_offset)
@@ -890,6 +898,167 @@ class DWARFArrayCrafter:
         new_backing = bytearray(self._backing)
         return DWARFArrayCrafter(self._elf, self._type_die_offset, self._dims,
                                  backing=new_backing, base_offset=self._base_offset)
+
+    # ------------------------------------------------------------------ #
+    #  List-like methods                                                   #
+    # ------------------------------------------------------------------ #
+
+    def _leaf_values(self):
+        """Yield all leaf element values depth-first (used for deep __contains__)."""
+        if len(self._dims) == 1:
+            for i in range(self._dims[0]):
+                yield self[i].value
+        else:
+            for i in range(self._dims[0]):
+                yield from self[i]._leaf_values()
+
+    def _child_equals(self, child, value):
+        """Return True if a direct child element matches value."""
+        if isinstance(child, DWARFCrafter):
+            if isinstance(value, (int, float)):
+                return child.value == value
+            if isinstance(value, (bytes, bytearray)):
+                return bytes(child) == bytes(value)
+            return False
+        if isinstance(child, DWARFArrayCrafter):
+            return child == value
+        return False
+
+    def __contains__(self, value):
+        """
+        For scalar (int/float) values, performs a deep search across all leaf
+        elements, so ``42 in int_grid[3][3]`` works as expected.
+        For structured values (list, bytes, DWARFArrayCrafter), checks direct
+        children only, matching Python list semantics.
+
+        Example:
+            arr = C64.craft('int[4]')
+            arr[2] = 99
+            99 in arr   # True
+            0  in arr   # True  (other elements are 0)
+
+            grid = C64.craft('int[2][3]')
+            grid[1] = [7, 8, 9]
+            7 in grid          # True  (deep scan)
+            [7,8,9] in grid    # True  (row match)
+        """
+        if isinstance(value, (int, float)):
+            return any(v == value for v in self._leaf_values())
+        for i in range(self._dims[0]):
+            if self._child_equals(self[i], value):
+                return True
+        return False
+
+    def __eq__(self, other):
+        """
+        Compare element-wise.  Accepts DWARFArrayCrafter, bytes/bytearray, or
+        a plain list/tuple (compared recursively against direct children).
+
+        Example:
+            arr = C64.craft('int[3]')
+            arr[0] = 1; arr[1] = 2; arr[2] = 3
+            arr == [1, 2, 3]   # True
+        """
+        if isinstance(other, DWARFArrayCrafter):
+            if self._dims != other._dims:
+                return False
+            return bytes(self) == bytes(other)
+        if isinstance(other, (bytes, bytearray)):
+            return bytes(self) == bytes(other)
+        if isinstance(other, (list, tuple)):
+            if len(other) != self._dims[0]:
+                return False
+            return all(self._child_equals(self[i], other[i]) for i in range(self._dims[0]))
+        return NotImplemented
+
+    def __ne__(self, other):
+        result = self.__eq__(other)
+        return result if result is NotImplemented else not result
+
+    def __add__(self, other):
+        """
+        Concatenate two arrays of the same element type along the outermost
+        dimension, returning a new independent copy.
+
+        Example:
+            a = C64.craft('int[3]')
+            b = C64.craft('int[2]')
+            c = a + b   # DWARFArrayCrafter int[5]
+        """
+        if not isinstance(other, DWARFArrayCrafter):
+            return NotImplemented
+        if self._type_die_offset != other._type_die_offset or self._dims[1:] != other._dims[1:]:
+            raise TypeError("Cannot concatenate arrays with different element types or inner dimensions")
+        new_dims = (self._dims[0] + other._dims[0],) + self._dims[1:]
+        my_bytes = bytes(self._backing[self._base_offset : self._base_offset + self._total_bytes])
+        other_bytes = bytes(other._backing[other._base_offset : other._base_offset + other._total_bytes])
+        return DWARFArrayCrafter(self._elf, self._type_die_offset, new_dims,
+                                 backing=bytearray(my_bytes + other_bytes))
+
+    def __iadd__(self, other):
+        """``arr += other`` — returns a new concatenated array (same semantics as __add__)."""
+        return self.__add__(other)
+
+    def __mul__(self, n):
+        """
+        Repeat this array n times along the outermost dimension, returning a
+        new independent copy.  Each repetition is a fresh copy of the bytes,
+        so mutations to the result do not alias each other.
+
+        Example:
+            a = C64.craft('int[3]')
+            a[0] = 1
+            b = a * 3   # DWARFArrayCrafter int[9]; b[0]==b[3]==b[6]==1
+            b[0] = 99   # does not affect b[3] or b[6]
+        """
+        if not isinstance(n, int):
+            return NotImplemented
+        if n < 0:
+            raise ValueError("Repetition count must be non-negative")
+        new_dims = (self._dims[0] * n,) + self._dims[1:]
+        my_bytes = bytes(self._backing[self._base_offset : self._base_offset + self._total_bytes])
+        return DWARFArrayCrafter(self._elf, self._type_die_offset, new_dims,
+                                 backing=bytearray(my_bytes * n))
+
+    def __rmul__(self, n):
+        """``3 * arr`` — same as ``arr * 3``."""
+        return self.__mul__(n)
+
+    def index(self, value, start=0, stop=None):
+        """
+        Return the index of the first direct child equal to value.
+        For 1D arrays compares element .value to an int/float.
+        For multi-D arrays compares sub-arrays via __eq__.
+        Raises ValueError if not found.
+
+        Example:
+            arr = C64.craft('int[5]')
+            arr[2] = 42
+            arr.index(42)   # 2
+
+            grid = C64.craft('int[3][2]')
+            grid[1] = [10, 20]
+            grid.index([10, 20])   # 1
+        """
+        if stop is None:
+            stop = self._dims[0]
+        for i in range(start, stop):
+            if self._child_equals(self[i], value):
+                return i
+        raise ValueError(f"{value!r} is not in array")
+
+    def count(self, value):
+        """
+        Count how many direct children equal value.
+        For 1D arrays compares element .value to an int/float.
+        For multi-D arrays compares sub-arrays via __eq__.
+
+        Example:
+            arr = C64.craft('int[6]')
+            arr[0] = 5; arr[3] = 5
+            arr.count(5)   # 2
+        """
+        return sum(1 for i in range(self._dims[0]) if self._child_equals(self[i], value))
 
 
 class _CVarAccessor:
