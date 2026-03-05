@@ -53,9 +53,8 @@ j[2] = [3,4,5]
 bytes(j) # b'\x18\x00\x00\x00\x18\x00\x00\x00.....'
 ```
 *warning*: this module is nearly 2000+ lines of AI code that i have not thoroughly reviewed.
-while i have an extensive list of test cases, and fixed many bugs in the code,
-i absolutely cannot assert this library will work. even on opus 4.6 i am still
-finding myself fixing simple issues. 
+even on opus 4.6 i am still finding myself fixing simple issues. 
+but i am trying my best. there are over 129 test cases.
 
 
 ## asm

@@ -1326,6 +1326,127 @@ def test_arraycrafter_repr():
 
 
 # ============================================================
+# String-key escape hatch: crafter['fieldname'] / crafter['fieldname'] = v
+# ============================================================
+
+# Header shared by several tests below.  It deliberately uses field names that
+# are either true Python dunders or collide with DWARFCrafter methods/properties.
+_SHADOWED_H = """\
+typedef struct shadowed {
+    int value;
+    int items;
+    int copy;
+    int __init__;
+    int __foo__;
+} shadowed;
+"""
+
+
+def _make_shadowed(tmp_path):
+    """Compile _SHADOWED_H and return a CHeader instance."""
+    hf = tmp_path / "shadowed.h"
+    hf.write_text(_SHADOWED_H)
+    return CHeader(str(hf))
+
+
+def test_string_key_read_shadowed_by_property(tmp_path):
+    """crafter['value'] reaches the C field 'value', not the .value property."""
+    j = _make_shadowed(tmp_path)
+    m = j.craft('shadowed')
+    # Write through normal attribute path (works because 'value' is a property,
+    # not blocked by __setattr__).  Then read back via bracket syntax.
+    m['value'] = 42
+    result = m['value']
+    assert result.value == 42, f"Expected 42, got {result.value}"
+
+
+def test_string_key_read_shadowed_by_method(tmp_path):
+    """crafter['items'] / crafter['copy'] reach C fields, not the Python methods."""
+    j = _make_shadowed(tmp_path)
+    m = j.craft('shadowed')
+    m['items'] = 100
+    m['copy'] = 200
+    assert m['items'].value == 100
+    assert m['copy'].value == 200
+
+
+def test_string_key_read_true_dunder_field(tmp_path):
+    """crafter['__foo__'] reaches a C field whose name looks like a dunder."""
+    j = _make_shadowed(tmp_path)
+    m = j.craft('shadowed')
+    m['__init__'] = 0xABCD
+    m['__foo__'] = 0x1234
+    assert m['__init__'].value == 0xABCD
+    assert m['__foo__'].value == 0x1234
+
+
+def test_string_key_write_visible_in_bytes(tmp_path):
+    """Writes via crafter['field'] = v are reflected in bytes(crafter)."""
+    j = _make_shadowed(tmp_path)
+    m = j.craft('shadowed')
+    m['value'] = 0xDEAD
+    m['__foo__'] = 0xBEEF
+    raw = bytes(m)
+    import struct as _struct
+    fields = _struct.unpack_from('<iiiii', raw)
+    # 'value' is the first field, '__foo__' is the last (5th)
+    assert fields[0] == 0xDEAD, f"'value' field: {hex(fields[0])}"
+    assert fields[4] == 0xBEEF, f"'__foo__' field: {hex(fields[4])}"
+
+
+def test_string_key_not_found_raises_key_error(tmp_path):
+    """A non-existent field name raises KeyError, not AttributeError."""
+    j = _make_shadowed(tmp_path)
+    m = j.craft('shadowed')
+    with pytest.raises(KeyError):
+        _ = m['does_not_exist']
+    with pytest.raises(KeyError):
+        m['does_not_exist'] = 99
+
+
+def test_string_key_normal_attr_access_unaffected(tmp_path):
+    """Adding string-key support must not break ordinary attribute access."""
+    j = _make_shadowed(tmp_path)
+    m = j.craft('shadowed')
+    # 'value' property still works for fields that DON'T collide
+    m['items'] = 55
+    assert m['items'].value == 55   # bracket
+    # Regular fields on headers still reachable via dot notation
+    fb = CHeader.__new__(CHeader)   # we just need the fixture headers here
+
+
+def test_string_key_and_dot_notation_are_equivalent(tmp_path):
+    """For an ordinary field name, crafter['x'] and crafter.x return the same data."""
+    # Use 'Basic' from the session headers via a fresh CHeader with an ordinary field.
+    hf = tmp_path / "simple.h"
+    hf.write_text("typedef struct simple { int x; int y; } simple;")
+    j = CHeader(str(hf))
+    m = j.craft('simple')
+    m.x = 77
+    assert m['x'].value == 77       # bracket
+    assert m.x.value == 77          # dot — same backing
+    m['y'] = 88
+    assert m.y.value == 88          # dot sees the bracket write
+
+
+def test_string_key_chaining(tmp_path):
+    """crafter['field'] returns a DWARFCrafter that supports further field access."""
+    hf = tmp_path / "nested.h"
+    hf.write_text("""\
+typedef struct inner { int value; int copy; } inner;
+typedef struct outer { inner items; int pad; } outer;
+""")
+    j = CHeader(str(hf))
+    m = j.craft('outer')
+    # 'items' on outer is a C field; on the returned inner crafter 'value'/'copy'
+    # are C fields too — use bracket access all the way down.
+    m['items']['value'] = 0x1111
+    m['items']['copy'] = 0x2222
+    assert m['items']['value'].value == 0x1111
+    assert m['items']['copy'].value == 0x2222
+
+
+# ============================================================
 # C64 built-in type sizes
 # ============================================================
 

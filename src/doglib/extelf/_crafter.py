@@ -326,7 +326,12 @@ class DWARFCrafter:
     def _resolve_index(self, index):
         """Resolve an array index to (offset, type_die, subrange_start)."""
         if not isinstance(index, int):
-            raise TypeError("Array indices must be integers")
+            if isinstance(index, str):
+                raise TypeError(
+                    f"String key {index!r} reached _resolve_index — use "
+                    "crafter['fieldname'] for field access by name."
+                )
+            raise TypeError(f"Array indices must be integers, not {type(index).__name__}")
 
         dwarfinfo = self._elf._get_dwarfinfo()
         die = dwarfinfo.get_DIE_from_refaddr(self._type_die_offset)
@@ -370,8 +375,9 @@ class DWARFCrafter:
         return remaining[0]
 
     def __getattr__(self, name):
-        # Block true Python dunders (__foo__) only; C field names like __finish
-        # or _private start with underscore but are valid struct members.
+        # True Python dunders (__foo__) are not forwarded to DWARF field lookup —
+        # they signal Python protocol queries (e.g. __len__, __iter__).
+        # Use crafter['__foo__'] to read a C field whose name looks like a dunder.
         if name.startswith('__') and name.endswith('__'):
             raise AttributeError(name)
         try:
@@ -381,9 +387,10 @@ class DWARFCrafter:
         return DWARFCrafter(self._elf, member_type_die.offset, self._backing, self._offset + member_offset)
 
     def __setattr__(self, name, value):
-        # Only bypass field resolution for true Python dunders (__foo__); C struct
-        # fields named __finish, _private, etc. should still write to the backing buffer.
-        # TODO: this is potentially problematic. C field names like __foo__ will not be written to.
+        # True Python dunders (__foo__) are stored on the Python object, not the
+        # backing buffer.  Use crafter['__foo__'] = v to write to a C field whose
+        # name looks like a dunder.  Fields shadowed by Python attributes (e.g.
+        # 'value', 'items') are likewise accessible via crafter['fieldname'] = v.
         if name.startswith('__') and name.endswith('__'):
             return super().__setattr__(name, value)
         if name == 'value':
@@ -406,6 +413,17 @@ class DWARFCrafter:
             raise IndexError(f"Negative index would access offset {absolute_offset}, before the backing buffer.")
 
     def __getitem__(self, index):
+        if isinstance(index, str):
+            # Escape hatch: crafter['fieldname'] bypasses __getattr__ guards,
+            # giving explicit access to fields whose names collide with Python
+            # attributes ('value', 'items', 'copy', ...) or look like dunders
+            # ('__init__', '__foo__', etc.).
+            try:
+                member_offset, member_type_die = self._resolve_field(index)
+            except AttributeError as e:
+                raise KeyError(index) from e
+            return DWARFCrafter(self._elf, member_type_die.offset, self._backing,
+                                self._offset + member_offset)
         if isinstance(index, slice):
             length = self._current_array_length()
             return [self[i] for i in range(*index.indices(length))]
@@ -415,6 +433,14 @@ class DWARFCrafter:
         return DWARFCrafter(self._elf, type_die.offset, self._backing, abs_off, sub_start)
 
     def __setitem__(self, index, value):
+        if isinstance(index, str):
+            # Escape hatch — mirrors __getitem__ string-key behaviour.
+            try:
+                member_offset, member_type_die = self._resolve_field(index)
+            except AttributeError as e:
+                raise KeyError(index) from e
+            self._write_value(member_offset, member_type_die, value)
+            return
         if isinstance(index, slice):
             length = self._current_array_length()
             for i, idx in enumerate(range(*index.indices(length))):

@@ -5,6 +5,10 @@ build/
 dist/
 wheels/
 *.egg-info
-.cursor/
+
 # Virtual environments
 .venv
+
+# my own stuff
+garbage/
+.cursor/
