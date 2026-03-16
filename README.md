@@ -22,11 +22,7 @@ stuff to make ropping faster
 only notable function right now is `quickrop` which sets up a system('/bin/sh') chain
 
 ## extelf
-very useful claude-slopped extension to pwntools `ELF`. basically do Cc things in python
-- get the address of specific fields in a symbol
-- craft your own fake `struct`s to use in payloads
-- parse raw bytes into a struct
-- determine offsets of fields in structs
+very useful claude-slopped extension to pwntools `ELF`. work with structs in python
 ```python
 libc = ExtendedELF('./libc.so.6')
 target_fd = libc.sym_obj['main_arena'].bins[3].fd # correct address of this field
@@ -60,3 +56,17 @@ but i am trying my best. there are over 129 test cases.
 ## asm
 basic assembler/disassembler stuff because pwntools is ungodly slow
 `asm_x64`, `asm_x86`, `dis_x64`, etc etc
+
+## muney
+house of muney payload generator
+```python
+from pwn import *
+from doglib.muney import house_of_muney
+libc = ELF("./libc.so.6")
+payload = house_of_muney(libc,{
+    'puts': libc.sym['system'],
+    '
+
+})
+print(payload) # b'\x00\x00\x00\x00....'
+```
