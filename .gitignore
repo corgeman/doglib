@@ -15,3 +15,4 @@ garbage/
 .gdb_history
 libc.so.6
 ld*.so*
+*.bin

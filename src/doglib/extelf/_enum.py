@@ -21,11 +21,21 @@ class DWARFEnum:
                         self._constants[name_attr.value.decode('utf-8')] = val_attr.value
 
     def __getattr__(self, name):
+        # True Python dunders are not forwarded to enum lookup.
+        # Use enum['NAME'] to access a constant whose name looks like a dunder.
         if name.startswith('__') and name.endswith('__'):
             raise AttributeError(name)
         if name in self._constants:
             return self._constants[name]
         raise AttributeError(f"Enum constant '{name}' not found")
+
+    def __getitem__(self, name):
+        # Escape hatch: enum['NAME'] bypasses __getattr__ guards, giving access
+        # to constants whose names collide with Python attributes or look like
+        # dunders (e.g. a C enum member literally named '__init__').
+        if name not in self._constants:
+            raise KeyError(f"Enum constant '{name}' not found")
+        return self._constants[name]
 
     def __contains__(self, name):
         return name in self._constants

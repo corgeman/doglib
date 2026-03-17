@@ -35,7 +35,7 @@ def _quiet_pwntools():
 @pytest.fixture()
 def challenge():
     """Return (exe, libc) ELF pair for the muney challenge."""
-    exe = ELF(str(TESTS_DIR / "muney_patched"), checksec=False)
+    exe = ELF(str(TESTS_DIR / "muney_patched.bin"), checksec=False)
     libc = ELF(str(TESTS_DIR / "libc.so.6"), checksec=False)
     return exe, libc
 

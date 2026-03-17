@@ -149,6 +149,21 @@ def test_enum_repr(headers):
     assert 'IDLE' in r and 'CRASHED' in r
 
 
+def test_enum_bracket_access(headers):
+    """enum['NAME'] returns the same value as enum.NAME."""
+    state = headers.enum('State')
+    assert state['IDLE']    == state.IDLE    == 0
+    assert state['RUNNING'] == state.RUNNING == 1
+    assert state['CRASHED'] == state.CRASHED == -1
+
+
+def test_enum_bracket_missing_raises_key_error(headers):
+    """enum['BOGUS'] raises KeyError, not AttributeError."""
+    state = headers.enum('State')
+    with pytest.raises(KeyError):
+        _ = state['BOGUS']
+
+
 # ============================================================
 # sizeof / offsetof / containerof / resolve_type
 # ============================================================

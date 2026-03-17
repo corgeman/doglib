@@ -5,7 +5,7 @@ from doglib.muney import house_of_muney
 
 context.log_level = "info"
 
-exe = ELF("./muney_patched", checksec=False)
+exe = ELF("./muney_patched.bin", checksec=False)
 libc = ELF("./libc.so.6", checksec=False)
 ld = ELF("./ld-2.34.so", checksec=False)
 
