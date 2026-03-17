@@ -15,7 +15,7 @@ stuff relevant for heap exploitation. currently:
 - fake tcache struct crafter
 
 ## fmt
-failed attempt at additional format string utilities
+failed attempt at additional format string utilities. might revisit this in the future
 
 ## ezrop
 stuff to make ropping faster
@@ -23,7 +23,7 @@ only notable function right now is `quickrop` which sets up a system('/bin/sh') 
 
 ## extelf
 very useful claude-slopped extension to pwntools `ELF`.  
-work with structs in python
+by parsing debuginfo, work with structs in python:
 ```python
 libc = ExtendedELF('./libc.so.6')
 target_fd = libc.sym_obj['main_arena'].bins[3].fd # correct address of this field
@@ -32,12 +32,17 @@ heap_chunk_addr = 0x55555555b000
 chunk_struct = libc.cast('malloc_chunk', heap_chunk_addr)
 target_fd = chunk_struct.fd # correct address of this field
 
-fake_tps = libc.craft('struct tcache_perthread_struct')
+# craft fake structs
+fake_tps = libc.craft('tcache_perthread_struct')
 fake_tps.counts[15] = 1
 fake_tps.entries[15] = 0x123456
 bytes(fake_tps) # payload bytes
+
+# parse leaked structs
+parsed = libc.parse('tcache_perthread_struct', bytes(fake_tps))
+parsed.entries[15] # 0x123456
 ```
-and many more! a bunch of basic types are already included in `extelf.C`, `.C32`, and `.C64`, so
+and much more! a bunch of basic types are already included in `extelf.C`, `.C32`, and `.C64`, so
 you can quickly play around with it yourself:
 ```python
 from doglib.extelf import C64

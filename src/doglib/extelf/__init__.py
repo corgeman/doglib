@@ -4,6 +4,8 @@ from ._crafter import DWARFCrafter, DWARFArrayCrafter
 from ._elf import ExtendedELF, CHeader, CInline, _CVarAccessor
 from ._builtin_types import CTypes
 
+ExtELF = ExtendedELF
+
 # Lazy singleton instances of CTypes for the three common bit widths.
 # Access as:  from doglib.extelf import C64
 # or:         import doglib.extelf; doglib.extelf.C64

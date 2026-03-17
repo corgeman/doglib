@@ -60,6 +60,7 @@ from doglib.extelf import (
     ExtendedELF,
     CHeader,
     CInline,
+    ExtELF,
     # CTypes,
 )
 
