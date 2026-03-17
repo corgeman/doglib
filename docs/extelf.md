@@ -497,13 +497,25 @@ DWARF parsing results and compiled CHeader ELFs are cached to disk under `~/.cac
 
 For large binaries like glibc, the initial DWARF parse can take several seconds with pyelftools. An optional Rust extension (`doglib-dwarf-parser`) uses [gimli](https://github.com/gimli-rs/gimli) for significantly faster cold-cache parsing. Once cached, both paths are equally fast.
 
-To install (requires Rust toolchain and [maturin](https://www.maturin.rs/)):
+Requires a Rust toolchain and [maturin](https://www.maturin.rs/) (`pip install maturin`).
+
+**Installing into a virtualenv** (e.g. for development):
 
 ```bash
 cd src/dwarf_parser_rs && maturin develop --release
 ```
 
-The extension is automatically detected at import time. If not installed, extelf falls back to pyelftools transparently -- no code changes needed.
+**Installing into the global Python environment** — `maturin develop` requires a venv, so build a wheel first and install that:
+
+```bash
+cd src/dwarf_parser_rs
+maturin build --release
+pip install --break-system-packages target/wheels/doglib_dwarf_parser-*.whl
+```
+
+Omit `--break-system-packages` if your global pip doesn't require it (e.g. inside a conda environment or an older system).
+
+The extension is automatically detected at import time. If not installed, extelf falls back to pyelftools transparently — no code changes needed.
 
 ---
 

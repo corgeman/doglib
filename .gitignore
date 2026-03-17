@@ -9,6 +9,10 @@ wheels/
 # Virtual environments
 .venv
 
+# Rust build artifacts
+src/dwarf_parser_rs/target/
+src/dwarf_parser_rs/Cargo.lock
+
 # my own stuff
 garbage/
 .cursor/

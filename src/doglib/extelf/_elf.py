@@ -391,6 +391,9 @@ class ExtendedELF(ELF):
             else:
                 subrange_start = 0
 
+                if current_die.tag == 'DW_TAG_array_type':
+                    current_die = self._unwrap_type(self._get_die_from_attr(current_die, 'DW_AT_type'))
+
                 if current_die.tag not in ('DW_TAG_structure_type', 'DW_TAG_class_type', 'DW_TAG_union_type'):
                     raise ValueError(f"Expected struct/union for field '{token}', got {current_die.tag}")
 
@@ -703,6 +706,15 @@ class ExtendedELF(ELF):
         """
         die = self._get_type_die(type_name)
         unwrapped = self._unwrap_type(die)
+
+        array_suffix = ''
+        if unwrapped and unwrapped.tag == 'DW_TAG_array_type':
+            dims = self._get_array_subranges(unwrapped)
+            array_suffix = ''.join(f'[{d}]' for d in dims)
+            elem_die = self._get_die_from_attr(unwrapped, 'DW_AT_type')
+            if elem_die:
+                unwrapped = self._unwrap_type(elem_die)
+
         if not unwrapped or unwrapped.tag not in ('DW_TAG_structure_type', 'DW_TAG_class_type', 'DW_TAG_union_type'):
             raise ValueError(f"'{type_name}' is not a struct/union type.")
 
@@ -711,7 +723,10 @@ class ExtendedELF(ELF):
 
         rows = self._collect_describe_rows(unwrapped)
 
-        print(f"{label} {type_name} ({total_size} bytes):")
+        size_label = f"{total_size} bytes"
+        if array_suffix:
+            size_label += f", element of {array_suffix}"
+        print(f"{label} {type_name} ({size_label}):")
         print(f"  {'offset':<8} {'size':<6} {'type':<28} {'name'}")
         print(f"  {'------':<8} {'----':<6} {'----':<28} {'----'}")
         for off, sz, tname, fname in rows:

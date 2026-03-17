@@ -1549,6 +1549,53 @@ def test_describe_dotpath_invalid(headers):
         headers.describe('FinalBoss.negative_val')
 
 
+def test_describe_array_of_struct(headers, capsys):
+    """describe('BossFight.b') unwraps through the array to describe Basic."""
+    headers.describe('BossFight.b')
+    out = capsys.readouterr().out
+    assert 'struct' in out
+    assert 'element of [2]' in out
+    lines = [l for l in out.splitlines() if '0x' in l]
+    field_names = {l.split()[-1] for l in lines}
+    assert field_names == {'a', 'b', 'c'}
+
+
+def test_describe_nested_through_array(headers, capsys):
+    """describe('GlobalTest.arr.ptr') unwraps ArrayFun[] to describe ptr's type (a pointer, which should fail)."""
+    with pytest.raises(ValueError, match="not a struct/union"):
+        headers.describe('GlobalTest.arr.ptr')
+
+
+def test_sizeof_through_array_field(headers):
+    """sizeof('BossFight.b.a') resolves through Basic[2] to char -> 1 byte."""
+    assert headers.sizeof('BossFight.b.a') == 1
+    assert headers.sizeof('BossFight.b.b') == 4
+
+
+def test_offsetof_through_array_field(headers):
+    """offsetof through an array-of-struct field resolves element member offsets."""
+    off_b_a = headers.offsetof('BossFight', 'b.a')
+    off_b_b = headers.offsetof('BossFight', 'b.b')
+    assert off_b_a == headers.offsetof('BossFight', 'b')
+    assert off_b_b == off_b_a + headers.offsetof('Basic', 'b')
+
+    off_indexed = headers.offsetof('BossFight', 'b[1].b')
+    assert off_indexed == off_b_a + headers.sizeof('Basic') + headers.offsetof('Basic', 'b')
+
+
+def test_craft_array_of_struct_field(headers):
+    """craft('BossFight.b') returns a crafter for Basic[2], indexable into Basic elements."""
+    arr = headers.craft('BossFight.b')
+    arr[0].a = ord('X')
+    arr[0].b = 0x41414141
+    arr[1].c = 99
+    raw = bytes(arr)
+    assert len(raw) == headers.sizeof('Basic') * 2
+    reparsed = headers.parse('Basic', raw)
+    assert reparsed.a.value == ord('X')
+    assert reparsed.b.value == 0x41414141
+
+
 def test_cast_dotpath_offset_adjustment(headers):
     """cast('BossFight.u', base_addr) returns an address offset by the field's position."""
     # BossFight: b[2] is two Basic structs. Basic has (char a, int b, short c).
