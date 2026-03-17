@@ -9,9 +9,11 @@ Fixtures (headers, chal_elf, cwd) live in conftest.py.
 import math
 import os
 import struct
+import subprocess
 import tempfile
 
 import pytest
+from elftools.elf.elffile import ELFFile
 from pwnlib.exception import PwnlibException
 from pwnlib.util.cyclic import cyclic as pwn_cyclic
 from pwnlib.util.packing import p64
@@ -1663,4 +1665,217 @@ def test_bool_base_type_round_trip():
 
     obj.flag = 1
     assert obj.flag.value is True
+
+
+# ── Parser parity tests ───────────────────────────────────────────────────────
+#
+# These compare the Rust DWARF parser output to pyelftools, ensuring both
+# produce identical name→offset mappings.  Skipped when the Rust extension
+# is not installed.
+
+_PYELF_CACHEABLE_TAGS = (
+    'DW_TAG_variable', 'DW_TAG_structure_type', 'DW_TAG_class_type',
+    'DW_TAG_union_type', 'DW_TAG_typedef', 'DW_TAG_enumeration_type',
+    'DW_TAG_base_type',
+)
+
+
+def _pyelf_parse(path):
+    """Reference parser using pyelftools — mirrors _build_dwarf_cache logic."""
+    pe_vars, pe_types = {}, {}
+    with open(path, 'rb') as f:
+        elf = ELFFile(f)
+        if not elf.has_dwarf_info():
+            return pe_vars, pe_types
+        for CU in elf.get_dwarf_info().iter_CUs():
+            for die in CU.iter_DIEs():
+                if die.tag in _PYELF_CACHEABLE_TAGS:
+                    attr = die.attributes.get('DW_AT_name')
+                    if attr:
+                        name = attr.value.decode('utf-8', errors='ignore')
+                        if die.tag == 'DW_TAG_variable':
+                            pe_vars[name] = die.offset
+                        else:
+                            pe_types[name] = die.offset
+    return pe_vars, pe_types
+
+
+def test_parity_et_rel(tmp_path):
+    """Rust parser matches pyelftools on a relocatable .o file (ET_REL)."""
+    dwarf_rs = pytest.importorskip("doglib_dwarf_parser")
+
+    src = tmp_path / "test.h"
+    src.write_text(
+        "typedef struct point { int x; int y; } point;\n"
+        "typedef struct line { point a; point b; } line;\n"
+    )
+    obj = tmp_path / "test.o"
+    subprocess.run(
+        ["gcc", "-x", "c", "-c", "-g", "-fno-eliminate-unused-debug-types",
+         str(src), "-o", str(obj)],
+        check=True,
+    )
+
+    pe_vars, pe_types = _pyelf_parse(str(obj))
+    rs_vars, rs_types = dwarf_rs.parse_dwarf(str(obj))
+    assert rs_vars == pe_vars
+    assert rs_types == pe_types
+
+
+def test_parity_et_exec(change_to_test_dir):
+    """Rust parser matches pyelftools on a linked executable (ET_EXEC)."""
+    dwarf_rs = pytest.importorskip("doglib_dwarf_parser")
+
+    path = os.path.join(os.path.dirname(__file__), "challenge")
+    pe_vars, pe_types = _pyelf_parse(path)
+    rs_vars, rs_types = dwarf_rs.parse_dwarf(path)
+    assert rs_vars == pe_vars
+    assert rs_types == pe_types
+
+
+def test_parity_cpp(tmp_path):
+    """Rust parser matches pyelftools on a C++ .o with classes and namespaces."""
+    dwarf_rs = pytest.importorskip("doglib_dwarf_parser")
+
+    src = tmp_path / "cpp_test.cpp"
+    src.write_text(
+        "class Animal { public: int legs; char name[32]; };\n"
+        "struct Position { float x, y; };\n"
+        "namespace game {\n"
+        "  class Player { public: Position pos; int health; };\n"
+        "}\n"
+        "enum Color { RED, GREEN, BLUE };\n"
+        "game::Player global_player;\n"
+    )
+    obj = tmp_path / "cpp_test.o"
+    subprocess.run(
+        ["g++", "-x", "c++", "-c", "-g", "-fno-eliminate-unused-debug-types",
+         str(src), "-o", str(obj)],
+        check=True,
+    )
+
+    pe_vars, pe_types = _pyelf_parse(str(obj))
+    rs_vars, rs_types = dwarf_rs.parse_dwarf(str(obj))
+    assert rs_vars == pe_vars
+    assert rs_types == pe_types
+    assert "Animal" in rs_types, "DW_TAG_class_type should be indexed"
+    assert "Position" in rs_types
+    assert "Player" in rs_types
+    assert "Color" in rs_types
+
+
+_GLIBC_PATH = "/home/corgo/pwn/tools/latest_glibc/libc6_2.23-0ubuntu11.3_amd64.so"
+
+
+@pytest.mark.skipif(
+    not os.path.exists(_GLIBC_PATH),
+    reason="glibc test binary not available",
+)
+def test_parity_glibc():
+    """Rust parser matches pyelftools on a real glibc with debug info."""
+    dwarf_rs = pytest.importorskip("doglib_dwarf_parser")
+
+    pe_vars, pe_types = _pyelf_parse(_GLIBC_PATH)
+    rs_vars, rs_types = dwarf_rs.parse_dwarf(_GLIBC_PATH)
+    assert rs_vars == pe_vars
+    assert rs_types == pe_types
+    assert len(rs_types) > 100, "Expected many types in glibc"
+
+
+def test_parity_no_dwarf(tmp_path):
+    """Rust parser returns empty dicts for a binary with no debug info."""
+    dwarf_rs = pytest.importorskip("doglib_dwarf_parser")
+
+    src = tmp_path / "nodebug.c"
+    src.write_text("int main() { return 0; }\n")
+    obj = tmp_path / "nodebug.o"
+    subprocess.run(
+        ["gcc", "-x", "c", "-c", str(src), "-o", str(obj)],
+        check=True,
+    )
+
+    rs_vars, rs_types = dwarf_rs.parse_dwarf(str(obj))
+    assert rs_vars == {}
+    assert rs_types == {}
+
+
+def test_rust_fallback(change_to_test_dir, monkeypatch):
+    """When the Rust parser returns empty, Python falls back to pyelftools."""
+    from doglib.extelf import _elf as elf_module
+    if elf_module._dwarf_parser_rs is None:
+        pytest.skip("Rust parser not installed")
+
+    def mock_parse(_path):
+        return ({}, {})
+
+    monkeypatch.setattr(elf_module._dwarf_parser_rs, "parse_dwarf", mock_parse)
+
+    from doglib.extelf import ExtendedELF
+    elf = ExtendedELF("./challenge")
+    elf._dwarf_parsed = False
+    elf._dwarf_vars = {}
+    elf._dwarf_types = {}
+    elf._build_dwarf_cache()
+    assert "Basic" in elf._dwarf_types, "Should fall back to pyelftools when Rust returns empty"
+
+
+# ── C++ challenge solve test ──────────────────────────────────────────────────
+
+def test_cpp_challenge_solve(change_to_test_dir):
+    """End-to-end solve of the C++ challenge binary using ExtendedELF."""
+    from doglib.extelf import ExtendedELF
+    from pwnlib.tubes.process import process as pwnprocess
+    import pwnlib.context
+    pwnlib.context.context.log_level = 'error'
+
+    elf = ExtendedELF("./challenge_cpp")
+    p = pwnprocess("./challenge_cpp")
+
+    # Level 1: Simple class
+    coords = elf.craft('Coords')
+    coords.x = 10
+    coords.y = 20
+    coords.z = 30
+    p.readuntil(b'Level 1:')
+    p.readline()
+    p.send(bytes(coords))
+    assert b'passed' in p.readline()
+
+    # Level 2: Nested class
+    entity = elf.craft('Entity')
+    entity.id = 42
+    entity.pos.x = 100
+    entity.pos.y = 200
+    entity.pos.z = 300
+    entity.name = b'hero\x00'
+    p.readuntil(b'Level 2:')
+    p.readline()
+    p.send(bytes(entity))
+    assert b'passed' in p.readline()
+
+    # Level 3: Inheritance
+    player = elf.craft('Player')
+    player.id = 1
+    player.pos.x = 50
+    player.health = 100
+    player.weapon.damage = 25
+    player.weapon.durability = 75
+    p.readuntil(b'Level 3:')
+    p.readline()
+    p.send(bytes(player))
+    assert b'passed' in p.readline()
+
+    # Level 4: Vtable hijack
+    win_addr = elf.symbols['_Z3winv']
+    fake_vt = elf.symbols['fake_vtable']
+    monster = elf.craft('Monster')
+    monster['_vptr.Monster'] = fake_vt
+    monster.hp = 0x1337
+    p.readuntil(b'Level 4:')
+    p.readline()
+    p.send(p64(win_addr))
+    p.send(bytes(monster))
+    assert b'passed' in p.readline()
+
+    p.close()
 

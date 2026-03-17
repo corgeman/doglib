@@ -9,6 +9,11 @@ from pwnlib.elf.elf import ELF
 from pwnlib.context import context
 from elftools.elf.elffile import ELFFile
 
+try:
+    import doglib_dwarf_parser as _dwarf_parser_rs
+except ImportError:
+    _dwarf_parser_rs = None
+
 log = getLogger(__name__)
 
 from ._address import DWARFAddress, DWARFArray
@@ -191,31 +196,40 @@ class ExtendedELF(ELF):
 
     def _find_member(self, struct_die, name):
         """
-        Find a member by name in a struct/union DIE. Recurses into anonymous
-        struct/union members to support C11 anonymous access patterns.
+        Find a member by name in a struct/union/class DIE. Recurses into:
+        - Anonymous struct/union members (C11 anonymous access patterns)
+        - Base classes via DW_TAG_inheritance (C++ inheritance)
         Returns (offset, type_die) or None.
         """
         for child in struct_die.iter_children():
-            if child.tag != 'DW_TAG_member':
-                continue
+            if child.tag == 'DW_TAG_member':
+                name_attr = child.attributes.get('DW_AT_name')
+                if name_attr and name_attr.value.decode('utf-8') == name:
+                    offset = self._parse_member_offset(child)
+                    type_die = self._get_die_from_attr(child, 'DW_AT_type')
+                    if not type_die:
+                        return None
+                    return (offset, type_die)
 
-            name_attr = child.attributes.get('DW_AT_name')
-            if name_attr and name_attr.value.decode('utf-8') == name:
-                offset = self._parse_member_offset(child)
-                type_die = self._get_die_from_attr(child, 'DW_AT_type')
-                if not type_die:
-                    return None
-                return (offset, type_die)
+                if not name_attr:
+                    anon_type = self._get_die_from_attr(child, 'DW_AT_type')
+                    if anon_type:
+                        anon_unwrapped = self._unwrap_type(anon_type)
+                        if anon_unwrapped and anon_unwrapped.tag in ('DW_TAG_structure_type', 'DW_TAG_class_type', 'DW_TAG_union_type'):
+                            result = self._find_member(anon_unwrapped, name)
+                            if result:
+                                anon_offset = self._parse_member_offset(child)
+                                return (anon_offset + result[0], result[1])
 
-            if not name_attr:
-                anon_type = self._get_die_from_attr(child, 'DW_AT_type')
-                if anon_type:
-                    anon_unwrapped = self._unwrap_type(anon_type)
-                    if anon_unwrapped and anon_unwrapped.tag in ('DW_TAG_structure_type', 'DW_TAG_union_type'):
-                        result = self._find_member(anon_unwrapped, name)
+            elif child.tag == 'DW_TAG_inheritance':
+                base_type = self._get_die_from_attr(child, 'DW_AT_type')
+                if base_type:
+                    base_unwrapped = self._unwrap_type(base_type)
+                    if base_unwrapped:
+                        result = self._find_member(base_unwrapped, name)
                         if result:
-                            anon_offset = self._parse_member_offset(child)
-                            return (anon_offset + result[0], result[1])
+                            base_offset = self._parse_member_offset(child)
+                            return (base_offset + result[0], result[1])
 
         return None
 
@@ -292,7 +306,7 @@ class ExtendedELF(ELF):
             dims = ''.join(f'[{d}]' for d in self._get_array_subranges(die))
             return self._get_type_name(elem) + dims
 
-        if die.tag in ('DW_TAG_structure_type', 'DW_TAG_union_type'):
+        if die.tag in ('DW_TAG_structure_type', 'DW_TAG_class_type', 'DW_TAG_union_type'):
             prefix = 'struct' if die.tag == 'DW_TAG_structure_type' else 'union'
             name = die.attributes.get('DW_AT_name')
             return f"{prefix} {name.value.decode('utf-8')}" if name else f"<anon {prefix}>"
@@ -377,7 +391,7 @@ class ExtendedELF(ELF):
             else:
                 subrange_start = 0
 
-                if current_die.tag not in ('DW_TAG_structure_type', 'DW_TAG_union_type'):
+                if current_die.tag not in ('DW_TAG_structure_type', 'DW_TAG_class_type', 'DW_TAG_union_type'):
                     raise ValueError(f"Expected struct/union for field '{token}', got {current_die.tag}")
 
                 result = self._find_member(current_die, token)
@@ -405,7 +419,7 @@ class ExtendedELF(ELF):
 
         cache_file = os.path.join(extelf_cache_dir, f"dwarf_{bid}.json")
 
-        _CACHE_VERSION = 2
+        _CACHE_VERSION = 4
 
         if os.path.exists(cache_file):
             try:
@@ -421,6 +435,24 @@ class ExtendedELF(ELF):
                 log.warning(f"Rebuilding DWARF cache: {e}")
 
         log.info(f"Parsing DWARF info for {os.path.basename(self.path)}... (This will be cached)")
+        if _dwarf_parser_rs is not None:
+            try:
+                self._dwarf_vars, self._dwarf_types = _dwarf_parser_rs.parse_dwarf(self.path)
+                if not self._dwarf_vars and not self._dwarf_types:
+                    raise ValueError("Rust DWARF parser returned an empty index")
+                with open(cache_file, 'w') as f:
+                    json.dump({
+                        'cache_version': _CACHE_VERSION,
+                        'vars': self._dwarf_vars,
+                        'types': self._dwarf_types,
+                    }, f)
+                self._dwarf_parsed = True
+                return
+            except Exception as e:
+                log.warning(f"Rust DWARF parser failed ({e}), falling back to pyelftools")
+                self._dwarf_vars = {}
+                self._dwarf_types = {}
+
         dwarfinfo = self._get_dwarfinfo()
         if not dwarfinfo:
             log.warning("ELF has no DWARF info. Path resolution won't work.")
@@ -428,8 +460,9 @@ class ExtendedELF(ELF):
             return
 
         cacheable_tags = (
-            'DW_TAG_variable', 'DW_TAG_structure_type', 'DW_TAG_union_type',
-            'DW_TAG_typedef', 'DW_TAG_enumeration_type', 'DW_TAG_base_type',
+            'DW_TAG_variable', 'DW_TAG_structure_type', 'DW_TAG_class_type',
+            'DW_TAG_union_type', 'DW_TAG_typedef', 'DW_TAG_enumeration_type',
+            'DW_TAG_base_type',
         )
         for CU in dwarfinfo.iter_CUs():
             for die in CU.iter_DIEs():
@@ -670,7 +703,7 @@ class ExtendedELF(ELF):
         """
         die = self._get_type_die(type_name)
         unwrapped = self._unwrap_type(die)
-        if not unwrapped or unwrapped.tag not in ('DW_TAG_structure_type', 'DW_TAG_union_type'):
+        if not unwrapped or unwrapped.tag not in ('DW_TAG_structure_type', 'DW_TAG_class_type', 'DW_TAG_union_type'):
             raise ValueError(f"'{type_name}' is not a struct/union type.")
 
         total_size = self._get_byte_size(unwrapped)
@@ -696,7 +729,7 @@ class ExtendedELF(ELF):
 
             if not name_attr and member_type:
                 unwrapped = self._unwrap_type(member_type)
-                if unwrapped and unwrapped.tag in ('DW_TAG_structure_type', 'DW_TAG_union_type'):
+                if unwrapped and unwrapped.tag in ('DW_TAG_structure_type', 'DW_TAG_class_type', 'DW_TAG_union_type'):
                     rows.extend(self._collect_describe_rows(unwrapped, offset))
                     continue
 

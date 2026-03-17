@@ -52,7 +52,7 @@ class DWARFAddress(int):
             log.error(f"Cannot statically resolve through a pointer at '.{name}'. Dereference first.")
             raise AttributeError(name)
 
-        if current_die.tag not in ('DW_TAG_structure_type', 'DW_TAG_union_type'):
+        if current_die.tag not in ('DW_TAG_structure_type', 'DW_TAG_class_type', 'DW_TAG_union_type'):
             raise AttributeError(f"Type {current_die.tag} is not a struct/union. Cannot access '.{name}'")
 
         result = self._elf._find_member(current_die, name)

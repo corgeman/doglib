@@ -15,6 +15,9 @@ dependencies = [
 dev = [
     "pytest>=8",
 ]
+fast = [
+    "doglib-dwarf-parser",
+]
 
 [build-system]
 requires = ["hatchling"]

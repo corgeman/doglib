@@ -1,0 +1,23 @@
+[package]
+name = "doglib-dwarf-parser"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "doglib_dwarf_parser"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3               = { version = "0.21", features = ["extension-module"] }
+gimli              = { version = "0.31", default-features = false, features = ["read", "endian-reader"] }
+object             = { version = "0.36", default-features = false, features = ["read", "elf", "compression"] }
+# Force the `alloc` feature on stable_deref_trait so that Arc<[u8]>
+# satisfies CloneStableDeref (needed by gimli's EndianArcSlice).
+# gimli pulls this in with default-features=false, which omits `alloc`.
+stable_deref_trait = { version = "1", features = ["alloc"] }
+
+[profile.release]
+codegen-units = 1
+lto           = true
+strip         = true
+opt-level     = 3

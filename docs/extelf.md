@@ -493,6 +493,20 @@ DWARF parsing results and compiled CHeader ELFs are cached to disk under `~/.cac
 
 ---
 
+## Fast DWARF Parsing (optional)
+
+For large binaries like glibc, the initial DWARF parse can take several seconds with pyelftools. An optional Rust extension (`doglib-dwarf-parser`) uses [gimli](https://github.com/gimli-rs/gimli) for significantly faster cold-cache parsing. Once cached, both paths are equally fast.
+
+To install (requires Rust toolchain and [maturin](https://www.maturin.rs/)):
+
+```bash
+cd src/dwarf_parser_rs && maturin develop --release
+```
+
+The extension is automatically detected at import time. If not installed, extelf falls back to pyelftools transparently -- no code changes needed.
+
+---
+
 ## Limitations
 
 - **Pointers cannot be dereferenced** -- `sym_obj['arena'].bins[3].fd` gives you the *address* of `fd`, not its value. You must read memory manually in your exploit to follow pointers.

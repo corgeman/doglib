@@ -63,7 +63,7 @@ class DWARFCrafter:
             if current_die.tag == 'DW_TAG_enumeration_type':
                 return f"<{type_name} {hex(self.value)}>"
 
-            if current_die.tag in ('DW_TAG_structure_type', 'DW_TAG_union_type'):
+            if current_die.tag in ('DW_TAG_structure_type', 'DW_TAG_class_type', 'DW_TAG_union_type'):
                 parts = []
                 for child in current_die.iter_children():
                     if child.tag != 'DW_TAG_member':
@@ -146,7 +146,7 @@ class DWARFCrafter:
         All other cases fall through to numeric addition."""
         if (isinstance(other, DWARFCrafter)
                 and other._type_die_offset == self._type_die_offset
-                and self._struct_tag() in ('DW_TAG_structure_type', 'DW_TAG_union_type')):
+                and self._struct_tag() in ('DW_TAG_structure_type', 'DW_TAG_class_type', 'DW_TAG_union_type')):
             combined = bytearray(bytes(self)) + bytearray(bytes(other))
             return DWARFArrayCrafter(self._elf, self._type_die_offset, (2,), backing=combined)
         return self._numeric_value() + other
@@ -157,7 +157,7 @@ class DWARFCrafter:
         which includes the subclass-priority rule where self is a subclass of other."""
         if (isinstance(other, DWARFCrafter)
                 and other._type_die_offset == self._type_die_offset
-                and self._struct_tag() in ('DW_TAG_structure_type', 'DW_TAG_union_type')):
+                and self._struct_tag() in ('DW_TAG_structure_type', 'DW_TAG_class_type', 'DW_TAG_union_type')):
             combined = bytearray(bytes(other)) + bytearray(bytes(self))
             return DWARFArrayCrafter(self._elf, self._type_die_offset, (2,), backing=combined)
         return other + self._numeric_value()
@@ -167,7 +167,7 @@ class DWARFCrafter:
     def __mul__(self, n):
         """struct * int → DWARFArrayCrafter of n independent copies.
         All other cases fall through to numeric multiplication."""
-        if isinstance(n, int) and self._struct_tag() in ('DW_TAG_structure_type', 'DW_TAG_union_type'):
+        if isinstance(n, int) and self._struct_tag() in ('DW_TAG_structure_type', 'DW_TAG_class_type', 'DW_TAG_union_type'):
             if n < 0:
                 raise ValueError("Repetition count must be non-negative")
             return DWARFArrayCrafter(self._elf, self._type_die_offset, (n,),
@@ -312,7 +312,7 @@ class DWARFCrafter:
         if current_die.tag == 'DW_TAG_pointer_type':
             raise AttributeError(f"Cannot resolve through a pointer at '.{name}'. Set the pointer directly.")
 
-        if current_die.tag not in ('DW_TAG_structure_type', 'DW_TAG_union_type'):
+        if current_die.tag not in ('DW_TAG_structure_type', 'DW_TAG_class_type', 'DW_TAG_union_type'):
             raise AttributeError(f"Type {current_die.tag} is not a struct/union. Cannot access '.{name}'")
 
         result = self._elf._find_member(current_die, name)
@@ -467,7 +467,7 @@ class DWARFCrafter:
         dwarfinfo = self._elf._get_dwarfinfo()
         die = dwarfinfo.get_DIE_from_refaddr(self._type_die_offset)
         current_die = self._elf._unwrap_type(die)
-        if current_die.tag not in ('DW_TAG_structure_type', 'DW_TAG_union_type'):
+        if current_die.tag not in ('DW_TAG_structure_type', 'DW_TAG_class_type', 'DW_TAG_union_type'):
             raise TypeError(f"items() only works on struct/union types, not {current_die.tag}")
         for child in current_die.iter_children():
             if child.tag != 'DW_TAG_member':
@@ -494,7 +494,7 @@ class DWARFCrafter:
         dwarfinfo = self._elf._get_dwarfinfo()
         die = dwarfinfo.get_DIE_from_refaddr(self._type_die_offset)
         current_die = self._elf._unwrap_type(die)
-        if current_die.tag not in ('DW_TAG_structure_type', 'DW_TAG_union_type'):
+        if current_die.tag not in ('DW_TAG_structure_type', 'DW_TAG_class_type', 'DW_TAG_union_type'):
             raise TypeError(f"dump() only works on struct/union types, not {current_die.tag}")
         type_name = self._elf._get_type_name(die)
         print(f"{type_name}:")
@@ -614,7 +614,7 @@ class DWARFCrafter:
         if current_die.tag == 'DW_TAG_array_type':
             length = self._current_array_length()
             return [self[i].values() for i in range(length)]
-        if current_die.tag in ('DW_TAG_structure_type', 'DW_TAG_union_type'):
+        if current_die.tag in ('DW_TAG_structure_type', 'DW_TAG_class_type', 'DW_TAG_union_type'):
             return {name: field.values() for name, field in self.items()}
         return bytes(self)
 
