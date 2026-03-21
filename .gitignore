@@ -20,3 +20,4 @@ garbage/
 libc.so.6
 ld*.so*
 *.bin
+dumpelf_research/

@@ -47,8 +47,8 @@ from doglib.asm import (
     runcmd,
 )
 
-# ── fmt ──────────────────────────────────────────────────────────────────────
-from doglib.fmt import DumpELF
+# ── dumpelf ──────────────────────────────────────────────────────────────────
+from doglib.dumpelf import DumpELF
 
 # ── extelf ───────────────────────────────────────────────────────────────────
 from doglib.extelf import (

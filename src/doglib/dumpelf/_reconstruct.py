@@ -340,7 +340,8 @@ class _DynInfo:
 # Tags whose d_ptr values are absolute addresses that need rebasing for PIE
 _PIE_PTR_TAGS = frozenset({
     DT_GNU_HASH, DT_HASH, DT_STRTAB, DT_SYMTAB, DT_PLTGOT,
-    DT_JMPREL, DT_RELA, DT_REL, DT_VERSYM,
+    DT_JMPREL, DT_RELA, DT_REL, DT_VERSYM, DT_VERNEED,
+    DT_INIT, DT_FINI, DT_INIT_ARRAY, DT_FINI_ARRAY,
 })
 
 
@@ -357,7 +358,12 @@ def _fix_dynamic_for_pie(dyn_data: bytearray, is64: bool, pie_base: int) -> byte
             break
         if d_tag in _PIE_PTR_TAGS:
             val = struct.unpack_from(ptr_fmt, dyn_data, off + ptr_off)[0]
-            struct.pack_into(ptr_fmt, dyn_data, off + ptr_off, val - pie_base)
+            # Some entries (DT_INIT, DT_FINI, etc.) stay as relative offsets
+            # at runtime — the linker adds the base internally without
+            # rewriting the DYNAMIC entry.  Only rebase if the value looks
+            # like an absolute address.
+            if val >= pie_base:
+                struct.pack_into(ptr_fmt, dyn_data, off + ptr_off, val - pie_base)
 
     return dyn_data
 
