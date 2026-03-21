@@ -23,7 +23,10 @@ def mangle(ptr,key):
 
 def demangle(ptr,key):
     return ror(ptr,0x11)^key
-    
+
+def mangle_kpt(enc,known):
+    return demangle(enc,known)
+
 def fake_exit_function(funcs: list[tuple[int,int]], key: int):
 	if len(funcs) > 32:
 		warn("Function count is greater than expected limit")
@@ -104,7 +107,6 @@ def house_of_context(libc,**kwargs) -> (int, bytes):
     kwargs.setdefault('rsp',libc.sym['__pthread_keys']+0x2000)
     kwargs['uc_stack.ss_flags'] = gadget # fsop payload calls this, useless for pwn
     buf = setcontext(kwargs,begin)
-    
     # ensure alignment so we can tcache poison
     padding = begin & 0x8
     begin -= padding

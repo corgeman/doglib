@@ -55,7 +55,7 @@ class ExtendedELF(ELF):
     An extension of the pwntools ELF class that adds support for resolving
     complex C-struct offsets dynamically using DWARF debug information.
     """
-    _CACHE_VERSION = 4
+    _CACHE_VERSION = 5
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -288,6 +288,9 @@ class ExtendedELF(ELF):
                 if die.tag in CACHEABLE_TAGS:
                     name_attr = die.attributes.get('DW_AT_name')
                     if name_attr:
+                        is_decl = die.attributes.get('DW_AT_declaration')
+                        if is_decl and is_decl.value:
+                            continue
                         name = name_attr.value.decode('utf-8', errors='ignore')
                         if die.tag == 'DW_TAG_variable':
                             self._dwarf_vars[name] = die.offset
@@ -428,7 +431,14 @@ class ExtendedELF(ELF):
         dims = parsed_dims
         if dims is None and count is not None:
             dims = count if isinstance(count, tuple) else (count,)
-        if dims is not None:
+        if dims is None:
+            unwrapped = self._unwrap_type(field_die)
+            if unwrapped and unwrapped.tag == 'DW_TAG_array_type':
+                dims = tuple(self._get_array_subranges(unwrapped))
+                elem_die = self._get_die_from_attr(unwrapped, 'DW_AT_type')
+                if elem_die and dims:
+                    type_die_offset = elem_die.offset
+        if dims:
             crafter = DWARFArrayCrafter(self, type_die_offset, dims)
         else:
             crafter = DWARFCrafter(self, type_die_offset)
@@ -538,7 +548,12 @@ class ExtendedELF(ELF):
             raise ValueError(f"'{type_name}' is not a struct/union type.")
 
         total_size = self._get_byte_size(unwrapped)
-        label = 'struct' if unwrapped.tag == 'DW_TAG_structure_type' else 'union'
+        if unwrapped.tag == 'DW_TAG_union_type':
+            label = 'union'
+        elif unwrapped.tag == 'DW_TAG_class_type':
+            label = 'class'
+        else:
+            label = 'struct'
 
         rows = self._collect_describe_rows(unwrapped)
 
@@ -552,9 +567,18 @@ class ExtendedELF(ELF):
             print(f"  0x{off:<6x} {sz:<6} {tname:<28} {fname}")
 
     def _collect_describe_rows(self, die, base_offset=0):
-        """Walk struct members for describe(), inlining anonymous members."""
+        """Walk struct members for describe(), inlining anonymous and inherited members."""
         rows = []
         for child in die.iter_children():
+            if child.tag == 'DW_TAG_inheritance':
+                base_type = self._get_die_from_attr(child, 'DW_AT_type')
+                if base_type:
+                    base_unwrapped = self._unwrap_type(base_type)
+                    if base_unwrapped:
+                        inherit_offset = self._parse_member_offset(child) + base_offset
+                        rows.extend(self._collect_describe_rows(base_unwrapped, inherit_offset))
+                continue
+
             if child.tag != 'DW_TAG_member':
                 continue
             name_attr = child.attributes.get('DW_AT_name')

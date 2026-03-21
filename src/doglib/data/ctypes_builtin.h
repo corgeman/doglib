@@ -114,4 +114,40 @@ typedef struct malloc_chunk {
     void* fd_nextsize;
     void* bk_nextsize;
 } _ct_malloc_chunk;
-  
+ 
+enum
+{
+  ef_free,	/* `ef_free' MUST be zero!  */
+  ef_us,
+  ef_on,
+  ef_at,
+  ef_cxa
+};
+
+struct exit_function
+  {
+    /* `flavour' should be of type of the `enum' above but since we need
+       this element in an atomic operation we have to use `long int'.  */
+    long int flavor;
+    union
+      {
+	void (*at) (void);
+	struct
+	  {
+	    void (*fn) (int status, void *arg);
+	    void *arg;
+	  } on;
+	struct
+	  {
+	    void (*fn) (void *arg, int status);
+	    void *arg;
+	    void *dso_handle;
+	  } cxa;
+      } func;
+  };
+struct exit_function_list
+  {
+    struct exit_function_list *next;
+    size_t idx;
+    struct exit_function fns[32];
+  };

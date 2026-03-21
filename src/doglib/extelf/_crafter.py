@@ -442,8 +442,9 @@ class DWARFCrafter:
 
     def items(self):
         """
-        Yield (field_name, DWARFCrafter) pairs for each direct member.
-        Only works on struct/union types.
+        Yield (field_name, DWARFCrafter) pairs for all accessible members.
+        Recurses into anonymous struct/union members and C++ base classes.
+        Only works on struct/union/class types.
 
         Example:
             for name, field in chunk.items():
@@ -452,38 +453,82 @@ class DWARFCrafter:
         current_die = self._get_current_die()
         if current_die.tag not in STRUCT_TAGS:
             raise TypeError(f"items() only works on struct/union types, not {current_die.tag}")
-        for child in current_die.iter_children():
+        yield from self._iter_members(current_die, self._offset)
+
+    def _iter_members(self, die, base_offset):
+        """Yield (name, DWARFCrafter) for all named members, recursing into
+        anonymous struct/union members and DW_TAG_inheritance entries."""
+        for child in die.iter_children():
+            if child.tag == 'DW_TAG_inheritance':
+                base_type = self._elf._get_die_from_attr(child, 'DW_AT_type')
+                if base_type:
+                    base_unwrapped = self._elf._unwrap_type(base_type)
+                    if base_unwrapped:
+                        inherit_offset = base_offset + self._elf._parse_member_offset(child)
+                        yield from self._iter_members(base_unwrapped, inherit_offset)
+                continue
+
             if child.tag != 'DW_TAG_member':
                 continue
             name_attr = child.attributes.get('DW_AT_name')
-            if not name_attr:
-                continue
-            field_name = name_attr.value.decode('utf-8')
+            offset = base_offset + self._elf._parse_member_offset(child)
             field_type_die = self._elf._get_die_from_attr(child, 'DW_AT_type')
             if not field_type_die:
                 continue
-            offset = self._elf._parse_member_offset(child)
-            yield field_name, DWARFCrafter(self._elf, field_type_die.offset, self._backing, self._offset + offset)
+
+            if not name_attr:
+                anon_unwrapped = self._elf._unwrap_type(field_type_die)
+                if anon_unwrapped and anon_unwrapped.tag in STRUCT_TAGS:
+                    yield from self._iter_members(anon_unwrapped, offset)
+                continue
+
+            field_name = name_attr.value.decode('utf-8')
+            yield field_name, DWARFCrafter(self._elf, field_type_die.offset, self._backing, offset)
 
     def dump(self):
         """
         Pretty-print all struct fields and their current values.
-        Skips array fields with more than 8 elements to avoid flooding output.
+        Recurses into named struct/union sub-fields. Skips array fields with
+        more than 8 elements to avoid flooding output.
 
         Example:
             chunk = libc.parse('malloc_chunk', leak)
             chunk.dump()
         """
-        dwarfinfo = self._elf._get_dwarfinfo()
-        die = dwarfinfo.get_DIE_from_refaddr(self._type_die_offset)
         current_die = self._get_current_die()
         if current_die.tag not in STRUCT_TAGS:
             raise TypeError(f"dump() only works on struct/union types, not {current_die.tag}")
+        dwarfinfo = self._elf._get_dwarfinfo()
+        die = dwarfinfo.get_DIE_from_refaddr(self._type_die_offset)
         type_name = self._elf._get_type_name(die)
         print(f"{type_name}:")
+        self._dump_lines(indent=2)
+
+    def _dump_lines(self, indent=2):
+        """Recursively print field values at the given indentation level."""
+        pad = ' ' * indent
+        dwarfinfo = self._elf._get_dwarfinfo()
+
+        def _fmt_val(v):
+            if isinstance(v, list):
+                return '[' + ', '.join(_fmt_val(x) for x in v) + ']'
+            if isinstance(v, float):
+                return repr(v)
+            if isinstance(v, int) and v < 0:
+                return str(v)
+            if isinstance(v, int):
+                return hex(v)
+            return repr(v)
+
+        def _collect_vals(crafter, remaining_dims):
+            if len(remaining_dims) == 1:
+                return [el.value for el in crafter]
+            return [_collect_vals(el, remaining_dims[1:]) for el in crafter]
+
         for field_name, field in self.items():
             field_die = dwarfinfo.get_DIE_from_refaddr(field._type_die_offset)
             field_unwrapped = self._elf._unwrap_type(field_die)
+
             if field_unwrapped and field_unwrapped.tag == 'DW_TAG_array_type':
                 total = self._elf._get_byte_size(field_unwrapped)
                 dims = self._elf._get_array_subranges(field_unwrapped)
@@ -494,36 +539,28 @@ class DWARFCrafter:
                 for d in dims:
                     total_elems *= d
                 if total_elems <= 8:
-                    def _fmt_val(v):
-                        if isinstance(v, list):
-                            return '[' + ', '.join(_fmt_val(x) for x in v) + ']'
-                        if isinstance(v, float):
-                            return repr(v)
-                        if isinstance(v, int) and v < 0:
-                            return str(v)
-                        if isinstance(v, int):
-                            return hex(v)
-                        return repr(v)
-                    def _collect_vals(crafter, remaining_dims):
-                        if len(remaining_dims) == 1:
-                            return [el.value for el in crafter]
-                        return [_collect_vals(el, remaining_dims[1:]) for el in crafter]
                     nested = _collect_vals(field, dims)
-                    print(f"  {field_name}: {elem_name}{ds} = {_fmt_val(nested)}")
+                    print(f"{pad}{field_name}: {elem_name}{ds} = {_fmt_val(nested)}")
                 else:
-                    print(f"  {field_name}: {elem_name}{ds} ({total} bytes)")
+                    print(f"{pad}{field_name}: {elem_name}{ds} ({total} bytes)")
+
+            elif field_unwrapped and field_unwrapped.tag in STRUCT_TAGS:
+                type_name = self._elf._get_type_name(field_die)
+                print(f"{pad}{field_name}: {type_name}")
+                field._dump_lines(indent + 2)
+
             else:
                 v = field.value
                 if isinstance(v, bool):
-                    print(f"  {field_name} = {v}")
+                    print(f"{pad}{field_name} = {v}")
                 elif isinstance(v, int) and v < 0:
-                    print(f"  {field_name} = {v}")
+                    print(f"{pad}{field_name} = {v}")
                 elif isinstance(v, int):
-                    print(f"  {field_name} = {hex(v)}")
+                    print(f"{pad}{field_name} = {hex(v)}")
                 elif isinstance(v, float):
-                    print(f"  {field_name} = {v!r}")
+                    print(f"{pad}{field_name} = {v!r}")
                 else:
-                    print(f"  {field_name} = {bytes(field).hex()}")
+                    print(f"{pad}{field_name} = {bytes(field).hex()}")
 
     def copy(self):
         """

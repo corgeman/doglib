@@ -392,11 +392,13 @@ class IO_FILE_plus_struct(FileStructure):
         self._IO_write_end = 2       
         self._IO_buf_base = 0
         self._IO_backup_base = 0
-        self._IO_save_end = stdout_addr + 0x38
+        self._IO_save_end = stdout_addr + 0x20
+        self._IO_save_base = rip
         self._lock = lock_addr
         self._codecvt = (stdout_addr-0x38) + 0x58
         self._wide_data = stdout_addr + 0x8 - 0x18
         self._mode = 1
+        # self._vtable =
         self.markers = rip
         
         return self.__bytes__()

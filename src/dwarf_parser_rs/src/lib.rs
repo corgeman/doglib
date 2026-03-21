@@ -95,6 +95,16 @@ fn index_unit(
             continue;
         }
 
+        let is_declaration = entry
+            .attr(gimli::DW_AT_declaration)
+            .map_err(|e| e.to_string())?
+            .and_then(|a| a.udata_value())
+            .unwrap_or(0)
+            != 0;
+        if is_declaration {
+            continue;
+        }
+
         let name_attr = entry
             .attr(gimli::DW_AT_name)
             .map_err(|e| e.to_string())?;

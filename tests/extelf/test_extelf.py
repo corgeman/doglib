@@ -1926,3 +1926,182 @@ def test_cpp_challenge_solve(change_to_test_dir):
 
     p.close()
 
+
+# ============================================================
+# Tests for forward-declaration skipping (fix #1)
+# ============================================================
+
+def test_declaration_skipping_python_parser(tmp_path):
+    """Python parser skips DW_AT_declaration and keeps the full definition."""
+    from doglib.extelf import CInline
+    t = CInline('''
+        struct opaque;
+        struct opaque { int x; int y; };
+    ''')
+    assert t.sizeof('opaque') == 8
+    c = t.craft('opaque')
+    c.x = 1; c.y = 2
+    assert c.x.value == 1
+    assert c.y.value == 2
+
+
+# ============================================================
+# Tests for typedef-array craft (fix #3)
+# ============================================================
+
+def test_craft_typedef_array(tmp_path):
+    """craft() on a typedef-array creates a DWARFArrayCrafter, not a plain DWARFCrafter."""
+    from doglib.extelf import CInline
+    from doglib.extelf._crafter import DWARFArrayCrafter
+    t = CInline('typedef int block_t[8];')
+    arr = t.craft('block_t')
+    assert isinstance(arr, DWARFArrayCrafter)
+    assert len(arr) == 8
+    arr[0] = 0xdead
+    arr[7] = 0xbeef
+    assert arr[0].value == 0xdead
+    assert arr[7].value == 0xbeef
+
+
+def test_craft_typedef_array_struct(tmp_path):
+    """craft() on a typedef of an array-of-struct gives a proper array crafter."""
+    from doglib.extelf import CInline
+    from doglib.extelf._crafter import DWARFArrayCrafter
+    t = CInline('''
+        typedef struct { int x; int y; } Point;
+        typedef Point PointArray[4];
+    ''')
+    arr = t.craft('PointArray')
+    assert isinstance(arr, DWARFArrayCrafter)
+    assert len(arr) == 4
+    arr[2].x = 10
+    arr[2].y = 20
+    assert arr[2].x.value == 10
+
+
+# ============================================================
+# Tests for C++ class label fix
+# ============================================================
+
+def test_describe_cpp_class_label(change_to_test_dir, capsys):
+    """describe() labels DW_TAG_class_type as 'class', not 'union'."""
+    import os
+    if not os.path.exists('./challenge_cpp'):
+        pytest.skip("challenge_cpp binary not compiled")
+    from doglib.extelf import ExtendedELF
+    elf = ExtendedELF('./challenge_cpp', checksec=False)
+    elf.describe('Coords')
+    out = capsys.readouterr().out
+    assert out.startswith('class ')
+    assert 'union' not in out.lower()
+
+
+def test_get_type_name_cpp_class(change_to_test_dir):
+    """get_type_name returns 'class Foo' for DW_TAG_class_type, not 'union Foo'."""
+    import os
+    if not os.path.exists('./challenge_cpp'):
+        pytest.skip("challenge_cpp binary not compiled")
+    from doglib.extelf import ExtendedELF
+    elf = ExtendedELF('./challenge_cpp', checksec=False)
+    die = elf._get_type_die('Coords')
+    name = elf._get_type_name(die)
+    assert 'class' in name
+    assert 'union' not in name
+
+
+# ============================================================
+# Tests for anonymous member iteration fix
+# ============================================================
+
+def test_items_includes_anonymous_members(headers):
+    """items() yields fields from anonymous struct/union members."""
+    c = headers.craft('AnonMember')
+    c['as_int'] = 42
+    c['x'] = 10
+    c['y'] = 20
+    names = [name for name, _ in c.items()]
+    assert 'type' in names
+    assert 'as_int' in names
+    assert 'as_float' in names
+    assert 'x' in names
+    assert 'y' in names
+
+
+def test_dump_includes_anonymous_members(headers, capsys):
+    """dump() shows fields from anonymous struct/union members."""
+    c = headers.craft('AnonMember')
+    c['as_int'] = 0xff
+    c['x'] = 5
+    c.dump()
+    out = capsys.readouterr().out
+    assert 'as_int' in out
+    assert 'x' in out
+    assert 'y' in out
+
+
+def test_values_includes_anonymous_members(headers):
+    """values() includes anonymous struct/union member fields in the dict."""
+    c = headers.craft('AnonMember')
+    c['type'] = 1
+    c['as_int'] = 99
+    c['x'] = 7
+    v = c.values()
+    assert isinstance(v, dict)
+    assert 'as_int' in v
+    assert v['as_int'] == 99
+    assert 'x' in v
+    assert v['x'] == 7
+
+
+# ============================================================
+# Tests for C++ inheritance iteration fix
+# ============================================================
+
+def test_items_includes_inherited_fields(change_to_test_dir):
+    """items() yields inherited base-class fields for C++ classes."""
+    import os
+    if not os.path.exists('./challenge_cpp'):
+        pytest.skip("challenge_cpp binary not compiled")
+    from doglib.extelf import ExtendedELF
+    elf = ExtendedELF('./challenge_cpp', checksec=False)
+    player = elf.craft('Player')
+    names = [name for name, _ in player.items()]
+    # Player's own fields
+    assert 'health' in names
+    # Inherited from Entity
+    assert 'id' in names
+    assert 'name' in names
+    # Inherited from Entity -> Coords (nested, not inherited)
+    assert 'pos' in names
+
+
+def test_describe_includes_inherited_fields(change_to_test_dir, capsys):
+    """describe() shows inherited base-class fields for C++ classes."""
+    import os
+    if not os.path.exists('./challenge_cpp'):
+        pytest.skip("challenge_cpp binary not compiled")
+    from doglib.extelf import ExtendedELF
+    elf = ExtendedELF('./challenge_cpp', checksec=False)
+    elf.describe('Player')
+    out = capsys.readouterr().out
+    assert 'health' in out
+    assert 'id' in out
+    assert 'name' in out
+    assert 'weapon' in out
+
+
+def test_dump_includes_inherited_fields(change_to_test_dir, capsys):
+    """dump() shows inherited base-class fields for C++ classes."""
+    import os
+    if not os.path.exists('./challenge_cpp'):
+        pytest.skip("challenge_cpp binary not compiled")
+    from doglib.extelf import ExtendedELF
+    elf = ExtendedELF('./challenge_cpp', checksec=False)
+    player = elf.craft('Player')
+    player['id'] = 7
+    player['health'] = 100
+    player.dump()
+    out = capsys.readouterr().out
+    assert 'id' in out
+    assert 'health' in out
+

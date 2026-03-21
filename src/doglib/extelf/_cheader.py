@@ -40,7 +40,17 @@ class CHeader(ExtendedELF):
 
         hash_input = header_data + str(bits).encode()
         if include_dirs:
-            hash_input += b'|' + '|'.join(sorted(os.path.abspath(d) for d in include_dirs)).encode()
+            for d in sorted(os.path.abspath(d) for d in include_dirs):
+                hash_input += b'|' + d.encode()
+                for root, _, files in os.walk(d):
+                    for fname in sorted(files):
+                        fpath = os.path.join(root, fname)
+                        try:
+                            hash_input += os.path.relpath(fpath, d).encode()
+                            with open(fpath, 'rb') as inc:
+                                hash_input += inc.read()
+                        except OSError:
+                            pass
         header_hash = hashlib.sha256(hash_input).hexdigest()[:16]
 
         extelf_cache_dir = os.path.join(context.cache_dir, 'extelf_cache')

@@ -195,7 +195,12 @@ class DWARFResolver:
             return self.get_type_name(elem) + dims_str(self.get_array_subranges(die))
 
         if die.tag in STRUCT_TAGS:
-            prefix = 'struct' if die.tag == 'DW_TAG_structure_type' else 'union'
+            if die.tag == 'DW_TAG_union_type':
+                prefix = 'union'
+            elif die.tag == 'DW_TAG_class_type':
+                prefix = 'class'
+            else:
+                prefix = 'struct'
             name = die.attributes.get('DW_AT_name')
             return f"{prefix} {name.value.decode('utf-8')}" if name else f"<anon {prefix}>"
 
