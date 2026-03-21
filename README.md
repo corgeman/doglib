@@ -29,9 +29,8 @@ some leaked pointer into the program `leaked_ptr`, you can do this:
 from doglib.dumpelf import DumpELF
 
 d = DumpELF(leak, leaked_ptr)
-d.dump("./target_dump")          # write reconstructed binary
-libc = d.libc                    # auto-identify + download remote libc
-print(hex(libc.sym["system"]))   # remote address, ready to use
+d.dump("./target_dump.elf")  # write reconstructed binary. itll run! maybe.
+libc = d.libc # (attempt) getting libc, slightly better than dynelf
 ```
 
 

@@ -19,6 +19,9 @@ fast = [
     "doglib-dwarf-parser",
 ]
 
+[project.scripts]
+dog = "doglib.commandline.main:main"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

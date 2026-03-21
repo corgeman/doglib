@@ -160,6 +160,24 @@ _DEBIAN_PKG_URL = "https://deb.debian.org/debian/pool/main/g/glibc"
 
 _LIBC_BASENAMES = {"libc.so.6", "libc-2.so", "libc.so"}
 
+# Filename of ld inside the .deb for glibc >= 2.34, keyed by Debian arch name.
+# Before 2.34 glibc shipped a versioned ld-VERSION.so; from 2.34 onward the
+# stable ABI name is used inside the package.
+_LD_NAME_GE_234: dict[str, str] = {
+    "amd64": "ld-linux-x86-64.so.2",
+    "i386":  "ld-linux.so.2",
+    "arm64": "ld-linux-aarch64.so.1",
+    "armhf": "ld-linux-armhf.so.3",
+}
+
+# Map ELF e_machine values to Debian multiarch architecture names.
+_EMACHINE_TO_DEB_ARCH: dict[int, str] = {
+    0x03: "i386",
+    0x28: "armhf",
+    0x3E: "amd64",
+    0xB7: "arm64",
+}
+
 _AR_MAGIC = b"!<arch>\n"
 _AR_HDR_SIZE = 60
 _AR_HDR_FMT = "16s12s6s6s8s10sbb"  # struct format for ar entry headers
@@ -297,4 +315,145 @@ def download_libc_by_version(
         return libc_path
 
     w.failure("could not find libc.so.6 inside deb")
+    return None
+
+
+def _extract_named_file_from_deb(
+    deb_data: bytes, target_basename: str, out_path: str
+) -> Optional[str]:
+    """Extract a single file by basename from a ``.deb``, saving to *out_path*.
+
+    Like :func:`_extract_libc_from_deb` but targets an arbitrary filename and
+    writes to an explicit output path rather than a directory.
+    """
+    tar_name = None
+    tar_data = None
+    for name, content in _iter_ar(deb_data):
+        if name.startswith("data.tar"):
+            tar_name = name
+            tar_data = content
+            break
+
+    if tar_data is None:
+        return None
+
+    if tar_name.endswith(".zst") or tar_name.endswith(".zstd"):
+        import zstandard
+        tar_data = zstandard.ZstdDecompressor().decompress(
+            tar_data, max_output_size=256 * 1024 * 1024,
+        )
+
+    with tarfile.open(fileobj=io.BytesIO(tar_data)) as tf:
+        for member in tf.getmembers():
+            if not member.isfile():
+                continue
+            if os.path.basename(member.name) == target_basename:
+                f = tf.extractfile(member)
+                if f is None:
+                    continue
+                with open(out_path, "wb") as out:
+                    out.write(f.read())
+                return out_path
+
+    return None
+
+
+def elf_deb_arch(libc_path: str) -> str:
+    """Return the Debian architecture name for the ELF at *libc_path*.
+
+    Reads the ``e_machine`` field from the ELF header and maps it to the
+    Debian multiarch name (e.g. ``"amd64"``, ``"arm64"``).  Falls back to
+    ``"amd64"`` for unrecognised machines.
+    """
+    import struct
+
+    try:
+        with open(libc_path, "rb") as f:
+            header = f.read(20)
+        if len(header) >= 20 and header[:4] == b"\x7fELF":
+            e_machine = struct.unpack_from("<H", header, 18)[0]
+            return _EMACHINE_TO_DEB_ARCH.get(e_machine, "amd64")
+    except OSError:
+        pass
+    return "amd64"
+
+
+def fetch_ld_by_version(
+    version: str,
+    distro: str,
+    arch: str = "amd64",
+    out_path: Optional[str] = None,
+) -> Optional[str]:
+    """Download the ld linker matching a given glibc version from package mirrors.
+
+    Uses the same ``.deb`` as the libc (``libc6_VERSION_ARCH.deb``).
+
+    Arguments:
+        version:  Full version string, e.g. ``"2.35-0ubuntu3.6"``.
+        distro:   ``"ubuntu"`` or ``"debian"``.
+        arch:     Debian arch name: ``"amd64"``, ``"i386"``, ``"arm64"``,
+                  ``"armhf"``.
+        out_path: Where to write the ld.  Defaults to ``"ld-SHORT.so"`` in
+                  the current working directory.
+
+    Returns:
+        Path to the downloaded ld on disk, or ``None``.
+    """
+    version_short = version.split("-")[0]
+    out_name = f"ld-{version_short}.so"
+    final_out = out_path or out_name
+
+    # Filename of ld inside the .deb varies by glibc version.
+    ver_tuple = tuple(int(x) for x in version_short.split(".")[:2])
+    if ver_tuple < (2, 34):
+        ld_in_deb = f"ld-{version_short}.so"
+    else:
+        ld_in_deb = _LD_NAME_GE_234.get(arch, "ld-linux-x86-64.so.2")
+
+    # Cache stores a copy under the pwntools cache dir so re-runs are instant.
+    cache_dir = os.path.join(
+        context.cache_dir, "dumpelf_ld", "%s_%s_%s" % (distro, version, arch)
+    )
+    cached = os.path.join(cache_dir, out_name)
+    if os.path.exists(cached):
+        log.success("Using cached ld at %s", cached)
+        if final_out != cached:
+            import shutil
+            shutil.copy2(cached, final_out)
+        return final_out
+
+    deb_name = "libc6_%s_%s.deb" % (version, arch)
+    if distro == "ubuntu":
+        url = "%s/%s" % (_UBUNTU_PKG_URL, deb_name)
+    elif distro == "debian":
+        url = "%s/%s" % (_DEBIAN_PKG_URL, deb_name)
+    else:
+        log.warning("Unknown distro %r, cannot download ld", distro)
+        return None
+
+    w = log.waitfor("Downloading ld from %s" % distro)
+    w.status(url)
+
+    package = wget(url, timeout=20)
+    if not package:
+        w.failure("download failed")
+        return None
+
+    os.makedirs(cache_dir, exist_ok=True)
+    w.status("extracting %s from deb" % ld_in_deb)
+
+    try:
+        result = _extract_named_file_from_deb(package, ld_in_deb, cached)
+    except Exception as e:
+        w.failure("extraction failed: %s" % e)
+        return None
+
+    if result and os.path.exists(result):
+        w.success("saved to %s" % result)
+        if final_out != cached:
+            import shutil
+            shutil.copy2(cached, final_out)
+        return final_out
+
+    w.failure("could not find %s inside deb" % ld_in_deb)
     return None
