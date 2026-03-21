@@ -21,6 +21,20 @@ failed attempt at additional format string utilities. might revisit this in the 
 stuff to make ropping faster
 only notable function right now is `quickrop` which sets up a system('/bin/sh') chain
 
+## dumpelf
+attempt blind elf dumping over remote
+if you have an infinite arbitrary read vuln you can define as a function `leak`, and 
+some leaked pointer into the program `leaked_ptr`, you can do this:
+```python
+from doglib.dumpelf import DumpELF
+
+d = DumpELF(leak, leaked_ptr)
+d.dump("./target_dump")          # write reconstructed binary
+libc = d.libc                    # auto-identify + download remote libc
+print(hex(libc.sym["system"]))   # remote address, ready to use
+```
+
+
 ## extelf
 very useful claude-slopped extension to pwntools `ELF`.  
 by parsing debuginfo, work with structs in python:
@@ -59,7 +73,7 @@ even on opus 4.6 i am still finding myself fixing simple issues.
 but i am trying my best. 
 
 ### dwarf_parser_rs
-optional rust-based parser to make ExtELF faster
+optional rust-based parser to make ExtELF faster  
 the parser has to look at ALL debug info objects and determine which ones are relevant to us,
 which on big libcs can be 1m+ objects. we can cache this to make it near-instant after the first parse,
 but that first parse can still take some time (~20s). this uses [gimli](github.com/gimli-rs/gimli) to make
