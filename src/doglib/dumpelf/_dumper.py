@@ -422,7 +422,7 @@ class DumpELF:
             for seg_data in lib_dumper.segments.values():
                 result = find_version_string(seg_data)
                 if result:
-                    version, distro = result
+                    version, distro, _kind = result
                     arch = "amd64" if self.elfclass == 64 else "i386"
                     libc_path = download_libc_by_version(version, distro, arch)
                     if libc_path:
