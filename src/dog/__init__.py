@@ -35,15 +35,12 @@ from doglib.muney import house_of_muney
 from doglib.ezrop import quickrop
 
 # ── asm ──────────────────────────────────────────────────────────────────────
-from doglib.asm import (
-    asm_x64,
-    asm_x86,
-    asm_arm,
-    asm_arm64,
-    dis_x64,
-    dis_x86,
-    dis_arm,
-    dis_arm64,
+from doglib.asm import kasm, cdis
+
+# ── shellcode ────────────────────────────────────────────────────────────────
+from doglib.shellcode import (
+    minshell,
+    run,
     runcmd,
 )
 
