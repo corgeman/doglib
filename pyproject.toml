@@ -15,9 +15,6 @@ dependencies = [
 dev = [
     "pytest>=8",
 ]
-fast = [
-    "doglib-dwarf-parser",
-]
 
 [project.scripts]
 dog = "doglib.commandline.main:main"

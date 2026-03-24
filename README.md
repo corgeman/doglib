@@ -1,7 +1,5 @@
 # dogtools
-things i personally wished were in pwntools but aren't  
-code is a mix of GPT slop and my own stuff  
-will (hopefully) never need more than what pwntools already installs
+things i always wished were in pwntools  
 ```python
 from dog import *
 # start cooking
@@ -92,19 +90,16 @@ random shellcodez
 
 ## cli
 installed under the 'dog' binary
-### solve
+### `dog solve`
 drop-in replacement for pwninit's template generator
-### fetchld
-given libc, search debian/ubuntu repos for ld
-### fetchdbg
-given libc (and optionally ld), search debian/ubuntu repos for debug symbols to unstrip both
-  
-`fetchld` and `fetchdbg` both check important places pwninit doesn't
+### `dog fetch`
+given libc/ld, search debin/ubuntu repos for the other, optionally unstrip with `--dbg`  
+this checks a few spots pwninit doesn't  
 
 
 ## asm
 basic assembler/disassembler stuff because pwntools is ungodly slow  
-`asm_x64`, `asm_x86`, `dis_x64`, etc etc
+access like `casm.x64` / or `kdis.amd64`
 
 ## io_file
 advanced file stream generator, useful for quick FSOP  
@@ -119,7 +114,7 @@ stuff relevant for heap exploitation. currently:
 optional rust-based parser to make ExtELF faster  
 the parser has to look at ALL debug info objects and determine which ones are relevant to us,
 which on big libcs can be 1m+ objects. we can cache this to make it near-instant after the first parse,
-but that first parse can still take some time (~20s). this uses [gimli](github.com/gimli-rs/gimli) to make that first parse less than a second.
+but that first parse can still take some time (~20s). this uses [gimli](github.com/gimli-rs/gimli) to make that first parse less than a second. not installed by default, needs maturin
 
 ## ezrop
 not very useful module for rop chains
