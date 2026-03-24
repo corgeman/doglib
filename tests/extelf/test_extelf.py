@@ -1749,7 +1749,8 @@ def _pyelf_parse(path):
 
 def test_parity_et_rel(tmp_path):
     """Rust parser matches pyelftools on a relocatable .o file (ET_REL)."""
-    dwarf_rs = pytest.importorskip("doglib_dwarf_parser")
+    doglib_rs = pytest.importorskip("doglib_rs")
+    dwarf_rs = doglib_rs.dwarf_parser
 
     src = tmp_path / "test.h"
     src.write_text(
@@ -1771,7 +1772,8 @@ def test_parity_et_rel(tmp_path):
 
 def test_parity_et_exec(change_to_test_dir):
     """Rust parser matches pyelftools on a linked executable (ET_EXEC)."""
-    dwarf_rs = pytest.importorskip("doglib_dwarf_parser")
+    doglib_rs = pytest.importorskip("doglib_rs")
+    dwarf_rs = doglib_rs.dwarf_parser
 
     path = os.path.join(os.path.dirname(__file__), "challenge")
     pe_vars, pe_types = _pyelf_parse(path)
@@ -1782,7 +1784,8 @@ def test_parity_et_exec(change_to_test_dir):
 
 def test_parity_cpp(tmp_path):
     """Rust parser matches pyelftools on a C++ .o with classes and namespaces."""
-    dwarf_rs = pytest.importorskip("doglib_dwarf_parser")
+    doglib_rs = pytest.importorskip("doglib_rs")
+    dwarf_rs = doglib_rs.dwarf_parser
 
     src = tmp_path / "cpp_test.cpp"
     src.write_text(
@@ -1820,7 +1823,8 @@ _GLIBC_PATH = "/home/corgo/pwn/tools/latest_glibc/libc6_2.23-0ubuntu11.3_amd64.s
 )
 def test_parity_glibc():
     """Rust parser matches pyelftools on a real glibc with debug info."""
-    dwarf_rs = pytest.importorskip("doglib_dwarf_parser")
+    doglib_rs = pytest.importorskip("doglib_rs")
+    dwarf_rs = doglib_rs.dwarf_parser
 
     pe_vars, pe_types = _pyelf_parse(_GLIBC_PATH)
     rs_vars, rs_types = dwarf_rs.parse_dwarf(_GLIBC_PATH)
@@ -1831,7 +1835,8 @@ def test_parity_glibc():
 
 def test_parity_no_dwarf(tmp_path):
     """Rust parser returns empty dicts for a binary with no debug info."""
-    dwarf_rs = pytest.importorskip("doglib_dwarf_parser")
+    doglib_rs = pytest.importorskip("doglib_rs")
+    dwarf_rs = doglib_rs.dwarf_parser
 
     src = tmp_path / "nodebug.c"
     src.write_text("int main() { return 0; }\n")

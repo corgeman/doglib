@@ -1,0 +1,10 @@
+[package]
+name = "dwarf_parser"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+pyo3               = { version = "0.28", features = ["extension-module"] }
+gimli              = { version = "0.31", default-features = false, features = ["read", "endian-reader"] }
+object             = { version = "0.36", default-features = false, features = ["read", "elf", "compression"] }
+stable_deref_trait = { version = "1", features = ["alloc"] }

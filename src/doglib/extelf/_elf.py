@@ -9,7 +9,7 @@ from pwnlib.context import context
 from elftools.elf.elffile import ELFFile
 
 try:
-    import doglib_dwarf_parser as _dwarf_parser_rs
+    from doglib_rs import dwarf_parser as _dwarf_parser_rs
 except ImportError:
     _dwarf_parser_rs = None
 

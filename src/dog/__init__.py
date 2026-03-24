@@ -44,6 +44,9 @@ from doglib.shellcode import (
     runcmd,
 )
 
+# ── log ──────────────────────────────────────────────────────────────────────
+from doglib.log import infoleak
+
 # ── dumpelf ──────────────────────────────────────────────────────────────────
 from doglib.dumpelf import DumpELF
 

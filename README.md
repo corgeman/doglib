@@ -93,7 +93,7 @@ installed under the 'dog' binary
 ### `dog solve`
 drop-in replacement for pwninit's template generator
 ### `dog fetch`
-given libc/ld, search debin/ubuntu repos for the other, optionally unstrip with `--dbg`  
+given libc/ld, search debian/ubuntu repos for the other, optionally unstrip with `--dbg`  
 this checks a few spots pwninit doesn't  
 
 
@@ -110,8 +110,9 @@ stuff relevant for heap exploitation. currently:
 - ptr mangling / demangling
 - fake tcache struct crafter
 
-## dwarf_parser_rs
-optional rust-based parser to make ExtELF faster  
+## doglib_rs
+optional rust extensions to make doglib faster  
+currently includes a DWARF parser (used by ExtELF) that uses [gimli](github.com/gimli-rs/gimli).
 the parser has to look at ALL debug info objects and determine which ones are relevant to us,
 which on big libcs can be 1m+ objects. we can cache this to make it near-instant after the first parse,
 but that first parse can still take some time (~20s). this uses [gimli](github.com/gimli-rs/gimli) to make that first parse less than a second. not installed by default, needs maturin

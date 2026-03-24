@@ -104,7 +104,7 @@ def _apply_debug(target_path: str, debug_path: str, label: str) -> bool:
 
 
 def main(args) -> None:
-    from doglib.dumpelf._libc import (
+    from doglib.libc import (
         download_libc_by_version,
         elf_deb_arch,
         fetch_debug_by_version,

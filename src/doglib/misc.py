@@ -86,16 +86,19 @@ def setcontext32(libc: ELF, **kwargs) -> (int, bytes):
         setcontext(kwargs, got+0x218),
     )
 
+
+"""
+NOTES (not implemented yet):
+attacking stdout is possible by writing the ucontext afterwards
+the only important things infront are the 'stdout'/'stderr'/'stdin' pointers but you can just spray those with &stdout 
+maybe we can house of apple2 into house of apple3 (like call the function that causes hoa3)
+ik this sounds really fucking stupid but it removes the exit() requirement while not needing any crazy rop gadgets
+there might a house with good rdi control that work without exit() though idk need to look into it more
+"""
 # setcontext32 but twice as small and works past 2.38
 # tldr is stdin filestream has a bunch of scratch space behind it
 # so we can write a ucontext_t there then fsop to setcontext
 # HOWEVER only happens on exit. if this is a problem you can fsop stdout to call exit.
-"""
-better solution:
-- write to standard output
-on modern libc stderr is always behind it (so write ur payload ther)
-the important things infront are the 'stdout'/'stderr'/'stdin' pointers but you can just spray those with &stdout 
-"""
 def house_of_context(libc,**kwargs) -> (int, bytes):
     assert context.bits == 64, "only support amd64!"
     

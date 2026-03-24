@@ -154,23 +154,19 @@ fn do_parse(path: &str) -> Result<(HashMap<String, u64>, HashMap<String, u64>), 
     let mut vars: HashMap<String, u64> = HashMap::new();
     let mut types: HashMap<String, u64> = HashMap::new();
 
-    // Pre-populate abbreviation tables for all CUs up front, avoiding
-    // redundant re-parsing when iterating entries within each unit.
     dwarf.populate_abbreviations_cache(gimli::AbbreviationsCacheStrategy::All);
 
-    // .debug_info compilation units
     let mut units = dwarf.units();
     while let Some(header) = units.next().map_err(|e| e.to_string())? {
         if let Err(e) = index_unit(&dwarf, header, &mut vars, &mut types) {
-            eprintln!("doglib_dwarf_parser: skipping malformed CU: {e}");
+            eprintln!("doglib_rs::dwarf_parser: skipping malformed CU: {e}");
         }
     }
 
-    // .debug_types type units (DWARF4 with -fdebug-types-section)
     let mut type_units = dwarf.type_units();
     while let Some(header) = type_units.next().map_err(|e| e.to_string())? {
         if let Err(e) = index_unit(&dwarf, header, &mut vars, &mut types) {
-            eprintln!("doglib_dwarf_parser: skipping malformed type unit: {e}");
+            eprintln!("doglib_rs::dwarf_parser: skipping malformed type unit: {e}");
         }
     }
 
@@ -191,8 +187,10 @@ fn parse_dwarf(path: &str) -> PyResult<(HashMap<String, u64>, HashMap<String, u6
     do_parse(path).map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e))
 }
 
-#[pymodule]
-fn doglib_dwarf_parser(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_function(wrap_pyfunction!(parse_dwarf, m)?)?;
+/// Register as a `dwarf_parser` submodule on *parent*.
+pub fn register(parent: &Bound<'_, PyModule>) -> PyResult<()> {
+    let m = PyModule::new(parent.py(), "dwarf_parser")?;
+    m.add_function(wrap_pyfunction!(parse_dwarf, &m)?)?;
+    parent.add_submodule(&m)?;
     Ok(())
 }

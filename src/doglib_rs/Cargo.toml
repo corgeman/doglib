@@ -1,0 +1,21 @@
+[workspace]
+members = ["crates/*"]
+
+[package]
+name = "doglib-rs"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "doglib_rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.28", features = ["extension-module"] }
+dwarf_parser = { path = "crates/dwarf_parser" }
+
+[profile.release]
+codegen-units = 1
+lto           = true
+strip         = true
+opt-level     = 3

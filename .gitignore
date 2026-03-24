@@ -10,8 +10,8 @@ wheels/
 .venv
 
 # Rust build artifacts
-src/dwarf_parser_rs/target/
-src/dwarf_parser_rs/Cargo.lock
+src/doglib_rs/target/
+src/doglib_rs/Cargo.lock
 
 # my own stuff
 garbage/

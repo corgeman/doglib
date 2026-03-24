@@ -15,7 +15,8 @@ import pytest
 from pwn import ELF, context, process
 
 from doglib.dumpelf import DumpELF
-from doglib.dumpelf._libc import find_build_id, find_version_string, download_libc_by_version
+from doglib.dumpelf._libc import find_build_id
+from doglib.libc import find_version_string, download_libc_by_version
 from doglib.dumpelf._reconstruct import (
     _ElfHeader,
     _Phdr,

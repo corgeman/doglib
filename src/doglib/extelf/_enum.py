@@ -4,6 +4,7 @@ class DWARFEnum:
     """
     Provides named access to enum constants from DWARF debug info.
     Supports attribute access, 'in' checks, and iteration.
+    NOTE: we shouldn't use IntEnum here because it merges duplicate values
     """
     def __init__(self, elf, type_die_offset):
         self._elf = elf
