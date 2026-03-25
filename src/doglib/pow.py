@@ -17,7 +17,7 @@ import base64
 import secrets
 import sys
 
-VERSION = "s"
+VERSION = b"s"
 MODULUS = 2**1279 - 1
 CHALSIZE = 2**128
 
@@ -64,7 +64,7 @@ def backend():
 
 def _encode_number(num):
     size = (num.bit_length() // 24) * 3 + 3
-    return base64.b64encode(num.to_bytes(size, "big")).decode()
+    return base64.b64encode(num.to_bytes(size, "big"))
 
 
 def _decode_number(enc):
@@ -72,14 +72,14 @@ def _decode_number(enc):
 
 
 def _decode_challenge(chal):
-    parts = chal.split(".")
+    parts = chal.split(b".")
     if parts[0] != VERSION:
         raise ValueError(f"Unknown challenge version: {parts[0]!r}")
     return [_decode_number(p) for p in parts[1:]]
 
 
 def _encode_challenge(arr):
-    return ".".join([VERSION] + [_encode_number(v) for v in arr])
+    return b".".join([VERSION] + [_encode_number(v) for v in arr])
 
 
 # --------------------------------------------------------------------------- #
@@ -142,23 +142,19 @@ def solve_pow(challenge):
     Automatically picks the fastest available backend.
     Accepts both str and bytes.
     """
+    challenge = challenge.encode() if isinstance(challenge, str) else challenge
     if _rs_pow is not None:
-        raw = challenge.encode() if isinstance(challenge, str) else challenge
-        return _rs_pow.solve(raw)
+        return _rs_pow.solve(challenge)
 
-    if isinstance(challenge, bytes):
-        challenge = challenge.decode()
     diff, x = _decode_challenge(challenge)
     y = _sloth_root(x, diff, MODULUS)
-    return _encode_challenge([y]).encode()
+    return _encode_challenge([y])
 
 
 def verify_pow(challenge, solution):
     """Verify that *solution* is correct for *challenge*. Accepts str or bytes."""
-    if isinstance(challenge, bytes):
-        challenge = challenge.decode()
-    if isinstance(solution, bytes):
-        solution = solution.decode()
+    challenge = challenge.encode() if isinstance(challenge, str) else challenge
+    solution = solution.encode() if isinstance(solution, str) else solution
     diff, x = _decode_challenge(challenge)
     (y,) = _decode_challenge(solution)
     res = _sloth_square(y, diff, MODULUS)

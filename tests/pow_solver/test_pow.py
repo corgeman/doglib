@@ -117,7 +117,7 @@ def test_cross_verify_rust_vs_python():
         sol = solve_pow(chal)
 
         diff, x = _decode_challenge(chal)
-        (y,) = _decode_challenge(sol.decode() if isinstance(sol, bytes) else sol)
+        (y,) = _decode_challenge(sol)
         res = _sloth_square(y, diff, MODULUS)
         assert x == res or MODULUS - x == res, (
             f"cross-verify failed at d={d}"
