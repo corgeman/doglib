@@ -10,3 +10,6 @@ dynamic         = ["version"]
 [tool.maturin]
 module-name = "doglib_rs"
 features    = ["pyo3/extension-module"]
+
+[tool.maturin.environment]
+RUSTFLAGS = "-C target-cpu=native"

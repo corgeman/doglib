@@ -71,6 +71,14 @@ libc = d.libc # (attempt) getting libc, slightly better than dynelf
 ## misc
 random stuff. worth reading yourself.
 
+## pow
+fastest pow solver for kctf/redpwn to my knowledge
+```python
+from dog import solve_pow
+solution = solve_pow("s.AAATiA==.c5JzfKLC099PHb3WLBaz1g==")
+```
+auto-selects the fastest backend installed, rust (70x) <-> gmpy2 (8x) <-> python (1x)
+
 ## muney
 [house of muney](https://maxwelldulin.com/BlogPost/House-of-Muney-Heap-Exploitation) payload generator
 ```python
@@ -96,7 +104,6 @@ drop-in replacement for pwninit's template generator
 given libc/ld, search debian/ubuntu repos for the other, optionally unstrip with `--dbg`  
 this checks a few spots pwninit doesn't  
 
-
 ## asm
 basic assembler/disassembler stuff because pwntools is ungodly slow  
 access like `casm.x64` / or `kdis.amd64`
@@ -105,30 +112,22 @@ access like `casm.x64` / or `kdis.amd64`
 advanced file stream generator, useful for quick FSOP  
 stolen from [pwncli](https://github.com/RoderickChan/pwncli/raw/refs/heads/main/pwncli/utils/io_file.py) with a few personal additions at the bottom
 
+## doglib_rs
+optional rust extensions to make certain doglib features MUCH faster. not installed by default, needs maturin
+### dwarf_parser
+uses [gimli](https://github.com/gimli-rs/gimli) to parse debug info 20x faster
+note that this only matters on the first parse, afterwards we cache it
+### pow_solver
+fastest solver for [redpwn pow](https://github.com/redpwn/pow) i am aware of
+2nd place is [this](https://anemato.de/blog/kctf-vdf) which is ~10% slower
+
 ## heap
 stuff relevant for heap exploitation. currently:
 - ptr mangling / demangling
 - fake tcache struct crafter
-
-## doglib_rs
-optional rust extensions to make doglib faster  
-currently includes a DWARF parser (used by ExtELF) that uses [gimli](github.com/gimli-rs/gimli).
-the parser has to look at ALL debug info objects and determine which ones are relevant to us,
-which on big libcs can be 1m+ objects. we can cache this to make it near-instant after the first parse,
-but that first parse can still take some time (~20s). this uses [gimli](github.com/gimli-rs/gimli) to make that first parse less than a second. not installed by default, needs maturin
 
 ## ezrop
 not very useful module for rop chains
 
 ## fmt
 failed attempt at advanced format string utilities. might revisit this in the future
-
-
-
-
-
-
-
-
-
-

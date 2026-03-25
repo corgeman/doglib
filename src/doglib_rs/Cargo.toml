@@ -13,6 +13,7 @@ crate-type = ["cdylib"]
 [dependencies]
 pyo3 = { version = "0.28", features = ["extension-module"] }
 dwarf_parser = { path = "crates/dwarf_parser" }
+pow_solver = { path = "crates/pow_solver" }
 
 [profile.release]
 codegen-units = 1

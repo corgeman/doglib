@@ -44,6 +44,9 @@ from doglib.shellcode import (
     runcmd,
 )
 
+# ── pow ──────────────────────────────────────────────────────────────────────
+from doglib.pow import solve_pow, verify_pow, get_challenge
+
 # ── log ──────────────────────────────────────────────────────────────────────
 from doglib.log import infoleak
 
