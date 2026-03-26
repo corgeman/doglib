@@ -50,7 +50,7 @@ from doglib.shellcode import (
 from doglib.pow import solve_pow, verify_pow, get_challenge
 
 # ── log ──────────────────────────────────────────────────────────────────────
-from doglib.log import infoleak
+from doglib.log import logx, log_printf
 
 # ── dumpelf ──────────────────────────────────────────────────────────────────
 from doglib.dumpelf import DumpELF
