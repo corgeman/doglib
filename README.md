@@ -104,6 +104,18 @@ drop-in replacement for pwninit's template generator
 given libc/ld, search debian/ubuntu repos for the other, optionally unstrip with `--dbg`  
 this checks a few spots pwninit doesn't  
 
+## log
+various stuff to assist in logging/debugging
+```python
+from dog import *
+libc = ELF("./libc.so.6")
+libc.address = 0x110370
+
+logx(libc.address, libc.sym['system'])
+# [*] libc.address=0x110370        (keeps the variable name!)
+# [*] libc.sym['system']=0x16c830
+```
+
 ## asm
 basic assembler/disassembler stuff because pwntools is ungodly slow  
 access like `casm.x64` / or `kdis.amd64`
@@ -126,8 +138,9 @@ stuff relevant for heap exploitation. currently:
 - ptr mangling / demangling
 - fake tcache struct crafter
 
+## fmt
+work-in-progress library for advanced format string attacks (ex. stackless arb writes)
+
 ## ezrop
 not very useful module for rop chains
 
-## fmt
-failed attempt at advanced format string utilities. might revisit this in the future

