@@ -84,6 +84,20 @@ ml = MemLeak(leak_fn, reraise=False)
 d = DumpELF(ml, some_leaked_ptr)
 ```
 
+**Bulk form** — for high-latency connections where pipelining multiple reads per network round-trip is possible:
+```python
+def leak(addr, count):
+    # count is the *maximum* bytes wanted; return as many as your vuln can
+    # deliver in one round-trip. DumpELF will loop to fill any remainder.
+    actual = min(count, MAX_PER_TRIP)
+    p.send(b"".join(read_req(addr + i) for i in range(actual)))
+    return p.recvn(actual)
+
+d = DumpELF(leak, some_leaked_ptr, bulk=True)
+```
+
+With `bulk=True`, small reads (ELF header parsing, pointer dereferences) call `leak(addr, context.bytes)` for cached individual reads via `MemLeak`. Large reads (entire PT_LOAD segments) call `leak(vaddr, memsz)` directly, reducing N round-trips to 1 (or a handful if you return short reads).
+
 **Optional hint:** If you already have a pwntools `ELF` object for the binary (e.g. you have a copy of the binary locally), pass it to speed up base-finding:
 ```python
 from pwn import ELF

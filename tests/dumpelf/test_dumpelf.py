@@ -345,7 +345,7 @@ class TestLibcIdentification:
         result = find_version_string(data)
         assert result is not None, "version string not found in libc"
 
-        version, distro = result
+        version, distro, _kind = result
         assert "2.39" in version
         assert distro == "ubuntu"
 
@@ -414,6 +414,66 @@ class TestLibcIdentification:
             assert libc_found, f"libc not found in bases: {list(bases.keys())}"
 
             os.close(leak._fd)
+        finally:
+            p.send(b"q\n")
+            p.close()
+
+
+class TestBulkLeak:
+    """Verify that bulk=True mode works and correctly loops on short reads."""
+
+    def test_bulk_dump_matches_normal(self, target_no_pie):
+        """Dumping with bulk=True should produce the same ELF bytes as normal mode."""
+        elf = ELF(target_no_pie, checksec=False)
+        p = process(target_no_pie)
+        try:
+            line = p.recvline()
+            assert line.startswith(b"PID:")
+            pid = int(line.split(b":")[1])
+            fd = os.open(f"/proc/{pid}/mem", os.O_RDONLY)
+
+            call_log = []
+
+            def bulk_leak(addr, count):
+                # Intentionally cap at 0x100 bytes to exercise the retry loop
+                actual = min(count, 0x100)
+                call_log.append((addr, actual))
+                try:
+                    os.lseek(fd, addr, os.SEEK_SET)
+                    return os.read(fd, actual)
+                except OSError:
+                    return None
+
+            def normal_leak(addr):
+                try:
+                    os.lseek(fd, addr, os.SEEK_SET)
+                    return os.read(fd, 8)
+                except OSError:
+                    return None
+
+            d_bulk   = DumpELF(bulk_leak, elf.address + 0x100, bulk=True)
+            d_normal = DumpELF(normal_leak, elf.address + 0x100)
+
+            segs_bulk   = d_bulk.segments
+            segs_normal = d_normal.segments
+
+            assert set(segs_bulk.keys()) == set(segs_normal.keys()), \
+                "bulk and normal mode found different segment addresses"
+
+            for vaddr in segs_normal:
+                assert segs_bulk[vaddr] == segs_normal[vaddr], \
+                    f"segment data mismatch at {vaddr:#x}"
+
+            # Confirm the loop was exercised: any segment > 0x100 bytes must
+            # have generated more than one bulk call for that address range.
+            large_segs = [sz for sz in (len(v) for v in segs_normal.values())
+                          if sz > 0x100]
+            assert large_segs, "no large segments found — test is meaningless"
+            assert len(call_log) > len(segs_normal), \
+                "expected multiple bulk calls (loop), got %d calls for %d segs" % (
+                    len(call_log), len(segs_normal))
+
+            os.close(fd)
         finally:
             p.send(b"q\n")
             p.close()

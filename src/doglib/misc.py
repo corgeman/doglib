@@ -260,7 +260,7 @@ def set_alias(p):
     p.rl = p.readline
     p.sc = lambda x: p.sa(b':',x)
     p.slc = lambda x: p.sla(b':',x)
-    p.snc = lambda x: p.sla(b':',str(x).encode())
+    p.snc = lambda x: p.sla(b':',i2b(x))
     return p
 
 def i2b(n: int):

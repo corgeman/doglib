@@ -62,18 +62,37 @@ class DumpELF:
     Arguments:
         leak: A callable ``(addr) -> bytes`` that leaks one or more
               bytes starting at *addr*, or a ``MemLeak`` instance.
+              When *bulk* is ``True``, the signature must be
+              ``(addr, count) -> bytes`` instead — *count* is the
+              maximum number of bytes wanted; return as many as your
+              vulnerability can deliver in one trip (up to *count*),
+              and ``DumpELF`` will loop to fill the remainder.
         pointer: Any valid address inside the target binary.
         elf: Optional local ``ELF`` object to speed up base-finding.
+        bulk: If ``True``, treat *leak* as a bulk-capable function
+              ``(addr, count) -> bytes``.  Segment dumps will call it
+              once per segment (looping only when a short read occurs),
+              dramatically reducing round-trips for high-latency leaks.
 
-    Example::
+    Example (standard)::
 
         def leak(addr):
-            # ... send addr, receive leaked bytes ...
-            return data
+            p.send(p64(addr))
+            return p.recvn(1)
 
         d = DumpELF(leak, known_ptr)
         d.dump('dumped.elf')
-        libc = d.libc        # identify + download remote libc
+
+    Example (bulk — format-string loop that can pipeline many reads)::
+
+        def leak(addr, count):
+            # pipeline `count` single-byte reads in one send/recv
+            p.send(b''.join(fmtstr_read(addr + i) for i in range(count)))
+            return p.recvn(count)
+
+        d = DumpELF(leak, known_ptr, bulk=True)
+        d.dump('dumped.elf')
+        libc = d.libc
     """
 
     def __init__(
@@ -81,11 +100,21 @@ class DumpELF:
         leak: Union[Callable, MemLeak],
         pointer: int,
         elf: Optional[ELF] = None,
+        bulk: bool = False,
     ):
-        if not isinstance(leak, MemLeak):
+        self._bulk_leak: Optional[Callable] = None
+
+        if bulk:
+            # leak(addr, count) -> bytes; wrap a single-byte version for MemLeak
+            self._bulk_leak = leak
+            def _single(addr: int) -> bytes:
+                return self._bulk_leak(addr, context.bytes)  # type: ignore[misc]
+            leak = MemLeak(_single)
+        elif not isinstance(leak, MemLeak):
             leak = MemLeak(leak)
 
         self.leak = leak
+        self._bulk = bulk
         self._elf = elf
         self._elfclass: Optional[int] = None
         self._elftype: Optional[str] = None
@@ -289,6 +318,22 @@ class DumpELF:
 
         return result
 
+    # ── Bulk read helper ────────────────────────────────────────────
+
+    def _bulk_read(self, addr: int, total: int) -> Optional[bytes]:
+        """Read *total* bytes starting at *addr* using the bulk leak callable.
+
+        Loops when the user's function returns a short read, so the caller
+        always gets exactly *total* bytes (or ``None`` on the first failure).
+        """
+        buf = b""
+        while len(buf) < total:
+            chunk = self._bulk_leak(addr + len(buf), total - len(buf))  # type: ignore[misc]
+            if not chunk:
+                return buf if buf else None
+            buf += chunk
+        return buf
+
     # ── Segment dumping ─────────────────────────────────────────────
 
     def _dump_segments(self) -> Dict[int, bytes]:
@@ -321,7 +366,8 @@ class DumpELF:
                 memsz = (memsz + 0xfff) & ~0xfff
 
                 w.status("segment %d: %#x (%#x bytes)" % (i, vaddr, memsz))
-                data = leak.n(vaddr, memsz)
+                data = (self._bulk_read(vaddr, memsz)
+                        if self._bulk_leak else leak.n(vaddr, memsz))
                 if data:
                     segments[vaddr] = data
 
@@ -373,7 +419,8 @@ class DumpELF:
         for lib_name, lib_base in self.bases.items():
             if name in lib_name:
                 log.info("Found %r at %#x", lib_name, lib_base)
-                lib_dumper = DumpELF(self.leak, lib_base)
+                lib_dumper = DumpELF(self._bulk_leak or self.leak, lib_base,
+                                     bulk=bool(self._bulk_leak))
                 return lib_dumper.dump(path)
 
         raise ValueError(f"library matching {name!r} not found in link map")
@@ -418,7 +465,8 @@ class DumpELF:
         # Strategy 2: version string → download from distro mirror
         w.status("trying version string scan")
         try:
-            lib_dumper = DumpELF(self.leak, libc_base)
+            lib_dumper = DumpELF(self._bulk_leak or self.leak, libc_base,
+                                 bulk=bool(self._bulk_leak))
             for seg_data in lib_dumper.segments.values():
                 result = find_version_string(seg_data)
                 if result:
