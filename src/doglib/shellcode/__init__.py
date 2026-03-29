@@ -30,10 +30,11 @@ from pwnlib.context import context as _context
 
 
 @contextmanager
-def _sc(ctx: str = "amd64"):
+def _sc(ctx: str | None = None):
     """Set pwntools arch context and yield the matching shellcraft module."""
-    with _context.local(arch=ctx):
-        yield getattr(_shcraft, ctx)
+    arch = ctx or _context.arch
+    with _context.local(arch=arch, **_context.architectures[arch]):
+        yield getattr(_shcraft, arch)
 
 # ---------------------------------------------------------------------------
 # Blobs
@@ -53,12 +54,12 @@ minshell = ShellcodeSet("minshell")
 # Generators
 # ---------------------------------------------------------------------------
 
-def run(path: str, argv: list[str] | None = None, ctx: str = "amd64") -> bytes:
+def run(path: str, argv: list[str] | None = None, ctx: str | None = None) -> bytes:
     with _sc(ctx) as sc:
         return _asm(sc.linux.execve(path, argv if argv is not None else [path], 0))
 
 # run but simpler, assumes /bin/sh is present
-def runcmd(cmd: str, ctx: str = "amd64") -> bytes:
+def runcmd(cmd: str, ctx: str | None = None) -> bytes:
     with _sc(ctx) as sc:
         return _asm(sc.linux.execve("/bin/sh", ["/bin/sh", "-c", cmd], 0))
 

@@ -33,7 +33,7 @@ class CHeader(ExtendedELF):
 
         host_bits = struct.calcsize('P') * 8
         if bits is None:
-            if 'bits' in context._tls:
+            if 'bits' in vars(context):
                 bits = context.bits
             else:
                 bits = host_bits
