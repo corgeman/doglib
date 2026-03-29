@@ -45,8 +45,16 @@ j[1][1] += 9
 j[2] = [3.0,4.0,5.0]
 bytes(j) # correct bytes!
 
-# .... and probably even more i'm forgetting
-
+# - always forget what that one struct looks like in memory?
+C64.describe("FILE")
+"""
+struct FILE (216 bytes):
+  offset   size   type                         name
+  ------   ----   ----                         ----
+  0x0      4      int                          _flags
+  0x8      8      char*                        _IO_read_ptr
+  ... (continues from here) ...
+"""
 ```
 
 ---

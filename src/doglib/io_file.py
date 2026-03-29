@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- encoding: utf-8 -*-
-# i did not write any of this; credits to https://github.com/RoderickChan/pwncli/blob/main/pwncli/utils/io_file.py. - corgo
+# i did not write 95% of this; credits to https://github.com/RoderickChan/pwncli/blob/main/pwncli/utils/io_file.py. - corgo
 '''
 @File    : io_file.py
 @Time    : 2021/11/23 23:46:48

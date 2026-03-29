@@ -4,9 +4,15 @@ from pwnlib.tubes.tube import tube
 from pwnlib.elf.elf import ELF
 from .asm import kasm
 
-def patch(target_cls):
+def patch(target_cls, force=False):
     def decorator(func):
-        setattr(target_cls, func.__name__, func)
+        name = func.fget.__name__ if isinstance(func, property) else func.__name__
+        if not force and hasattr(target_cls, name):
+            raise AttributeError(
+                f"patch: {target_cls.__name__} already has attribute '{name}'. "
+                f"Use force=True to override."
+            )
+        setattr(target_cls, name, func)
         return func
     return decorator
 
@@ -70,3 +76,9 @@ def gadget(self, asm):
     asm = kasm[self.arch](asm)
     return next(self.search(asm,executable=True))
 
+@patch(ELF)
+@property
+def binsh(self):
+    return next(self.search(b"/bin/sh\0"))
+
+# maybe add extelf stuff l8r

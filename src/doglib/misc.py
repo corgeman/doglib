@@ -215,20 +215,6 @@ def find_libc_leak(memory_dump, target_addr, aligned=False, is_32bit=False):
 
 # stuff i commonly write in solve scripts (may move to own module in the future)
 
-# maybe not worth stripping this one since
-# A) makes it harder to share B) may forget syntax C) cannot change colon
-def set_alias(p):
-    p.sla = p.sendlineafter
-    p.sl = p.sendline
-    p.sa = p.sendafter
-    p.s = p.send
-    p.ru = p.readuntil
-    p.rl = p.readline
-    p.sc = lambda x: p.sa(b':',x)
-    p.slc = lambda x: p.sla(b':',x)
-    p.snc = lambda x: p.sla(b':',i2b(x))
-    return p
-
 def i2b(n: int):
     return str(n).encode()
 
@@ -272,7 +258,6 @@ __all__ = [
     "setcontext32",
     "house_of_context",
     "find_libc_leak",
-    "set_alias",
     "i2b",
     "rerun",
 ]

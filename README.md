@@ -120,6 +120,21 @@ logx(libc.address, libc.sym['system'])
 # [*] libc.sym['system']=0x16c830
 ```
 
+## _hijack
+internal function to add some methods on existing pwntools features. probably worth skimming it's short
+```python
+p = remote("localhost",1024)
+exe = ELF('./foobar')
+# shorthands (sample)
+p.sl # sendline
+p.rl # readline
+p.sla # sendlineafter
+# new features 
+p.readlineint() # int(p.readline(),0)
+exe.gadget['pop rdi; ret'] # (&gadget_address)
+exe.binsh # (&binsh_address)
+```
+
 ## asm
 basic assembler/disassembler stuff because pwntools is ungodly slow  
 access like `kasm.amd64` / or `cdis.arm`
