@@ -28,4 +28,5 @@ if you need an external library, try to:
 - load the library at function run-time, so it's only required if someone tries to use it (see how `doglib/asm.py` imports `keystone`, which is not part of pwntools)
 - use a fallback (see how `doglib/pow.py` selects the fastest solver library available)
 - worst case, do not add it to `dog/__init__.py` and require explicit import through `doglib`
+
 you should never write `from pwn import *`, please import what's necessary from `pwnlib` instead

@@ -84,12 +84,12 @@ Just like that, we've retrieved the server's remote libc/ld! With this informati
 All of this has been mostly possible with pwntools already, and it's probably not what you came here for, so let's move onto the thing it doesn't do: dumping the program.
 
 # program dumping
-This one is much harder. Dumping the program has two There are two hurdles we have to get over:
-- It's much faster to leak libc/ld-- we leak something unique like its build ID, then use a website like [libc.rip](https://libc.rip) to identify it from there. This is a completely unique program, so this isn't possible.
-- An ELF loaded in memory is much different than it is on disk-- only the parts necessary for the program to run are loaded, meaning multiple critical sections simply do not exist.
+This one is much harder. Dumping the program involves getting over two hurdles:
+- It's much faster to leak libc/ld-- we leak something identifiable like its build ID, then look that up on something like [libc.rip](https://libc.rip). This is a completely unique program, so this isn't possible.
+- An ELF loaded in memory is much different than it is on disk-- only the parts necessary for the program to run are loaded, meaning multiple critical sections simply do not exist in memory.
 DumpELF tries to solve the second problem for you with a best-attempt reconstruction, but the first is on us.  
 
-We could go ahead with using `dump_string` to try and fully dump the program, but against a real server this would likely take well over an hour. ELFs are mostly null bytes, and since our leak ends on an null byte, DumpELF needs about *18 thousand* calls to `dump_string` to get enough information. We need to be *much* faster than that.  
+We could go ahead with using `dump_string` to try and fully dump the program, but against a real server this would likely take well over an hour. ELFs are mostly null bytes, and since our leak ends on an null byte, DumpELF needs about *18 thousand* calls to `dump_string` to get enough information. We need to find a way to leak *significantly* more data per round-trip against the server.
 
 From here, I'll go over two solutions to this that both independently reduce the amount of calls by ~8x.  
 
@@ -284,17 +284,18 @@ def bulk_dump(addr, cnt):
     # info(f"asked for {cnt} got {len(final)}")
     return final
 ```
-The original `dump_qword` has been mostly unchanged, I've just split it up into two functions for usability. The only important thing I do now is write `DELIMIT` at the end of each format string payload we send at once, so that when we can correctly split up all the responses we get back. The other notable thing I do is this:
+The original `dump_qword` has been mostly unchanged, I've just split it up into two functions for usability. The only important thing I do now is write `DELIMIT` at the end of each format string payload we send at once, so that when we can correctly split up all the responses we get back.  
+The other notable thing I do is this:
 ```python
 result = p.recv()
 while result.count(b'DELIMIT') != max(cnt//8,1):
     # print(result.count(b'DELIMIT'),cnt//8)
     result += p.recv()
 ```
-The remote server will likely not send everything back at once-- you should continue trying to read from the server until you get the amount of expected responses back. Here, since I sent `cnt//8` format string payloads with `DELIMIT` at the end, I keep asking for more data until `result` contains exactly that many `DELIMIT`s.  
+The remote server will likely not send everything back at once. You should continue trying to read from the server until you get the amount of expected responses back. Here, since I sent `cnt//8` format string payloads with `DELIMIT` at the end, I keep asking for more data until `result` contains exactly that many `DELIMIT`s.  
 
 
-With the ability to leak a near-arbitrary amount of data in a single .send(), your time-to-leak should drop significantly-- needing about 2000 calls from `dump_qword` to only 100. Here's the full solution making use of `bulk_write`:
+With the ability to leak a near-arbitrary amount of data in a single .send(), your time-to-leak should drop significantly-- needing about 2000 calls from `dump_qword` to only 100 from `dump_bulk`. Here's the full solution making use of `bulk_write`:
 ```python
 #!/usr/bin/env python3
 

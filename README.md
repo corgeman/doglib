@@ -67,7 +67,7 @@ d = DumpELF(leak, leaked_ptr)
 d.dump("./target_dump.elf")  # write reconstructed binary. itll run! maybe.
 libc = d.libc # (attempt) getting libc, slightly better than dynelf
 ```
-writeup using this on a real ctf challenge at [docs/dumpelf_writeup.md](dumpelf_writeup.md)
+writeup using this on a real ctf challenge at [dumpelf_writeup.md](docs/dumpelf_writeup.md)
 *warning*: very very hacky barely works on x64/x86. use as a last resort!
 
 ## misc
@@ -144,7 +144,7 @@ advanced file stream generator, useful for quick FSOP
 stolen from [pwncli](https://github.com/RoderickChan/pwncli/raw/refs/heads/main/pwncli/utils/io_file.py) with a few personal additions at the bottom
 
 ## doglib_rs
-optional rust extensions to make certain doglib features MUCH faster. not installed by default, needs maturin. install with `cd ./src/doglib_rs; pip install .`
+optional rust extensions to make certain doglib features MUCH faster. not installed by default.
 ### dwarf_parser
 uses [gimli](https://github.com/gimli-rs/gimli) to parse debug info 20x faster  
 note that this only matters on the first parse, afterwards we cache it  

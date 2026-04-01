@@ -16,6 +16,8 @@ src/doglib_rs/Cargo.lock
 # my own stuff
 garbage/
 .cursor/
+CLAUDE.md
+.claude/
 .gdb_history
 libc.so.6
 ld*.so*

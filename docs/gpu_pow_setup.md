@@ -49,20 +49,23 @@ and if you're using this for a well-known POW, say [socaz](https://hub.docker.co
 ```bash
 corgo@dog-computer:~$ nc localhost 1089
     Do Hashcash for 30 bits with resource "udtAjLfhDpIu"
-    https://pow.cybersecnatlab.it/?data=udtAjLfhDpIu&bits=30
-    or
-    hashcash -mCb30 "udtAjLfhDpIu"
     Result: ^C
 corgo@dog-computer:~$ echo ERMMMMMM
     ERMMMMMM
-corgo@dog-computer:~$ python3
-    Python 3.12.3 (main, Mar  3 2026, 12:15:18) [GCC 13.3.0] on linux
-    Type "help", "copyright", "credits" or "license" for more information.
-    >>> from dog import *
-    >>> p = do_pow(remote("localhost",1089))
-    >>> p.interactive()
+corgo@dog-computer:~/pwn/.config/doglib/research/testpow$ cat ./testpow.py
+    from dog import *
+    p = do_pow(remote("localhost",1089))
+    p.interactive()
+corgo@dog-computer:~/pwn/.config/doglib/research/testpow$ python3 ./testpow.py DEBUG
+    [+] Opening connection to localhost on port 1089: Done
+    [DEBUG] Received 0x98 bytes:
+        b'Do Hashcash for 30 bits with resource "9wLIFMcmGci4"\n'
+        b'Result: '
+    [DEBUG] Sent 0x2f bytes:
+        b'1:30:260331:9wLIFMcmGci4::k-K0GHpmBSo:378f7f70\n'
     [*] Switching to interactive mode
-    Write your code > hehehehe
+    [DEBUG] Received 0x12 bytes:
+        b'Write your code > '
 ```
 
 ## notes
