@@ -151,7 +151,7 @@ note that this only matters on the first parse, afterwards we cache it
 ### pow_solver
 two very fast proof-of-work solvers in rust
 - sloth: fastest solver for [redpwn/kctf pow](https://github.com/redpwn/pow) i am aware of. 2nd place is [this](https://anemato.de/blog/kctf-vdf) which is ~10% slower
-- hash: fast bruteforcer for "find hash with N leading zeros"-based POWs, in my tests it's basically equivalent to hashcat. works on WSL too. requires some additional setup, see [gpu_pow_setup.md](docs/gpu_pow_setup.md)
+- hash: fast bruteforcer for "find hash with N leading zeros"-based POWs, in my tests it's basically equivalent to hashcat. works on WSL too. requires some additional setup, see [gpu_pow_setup.md](docs/gpu_pow_setup.md). includes cpu fallback (although MUCH slower)
 
 ## heap
 stuff relevant for heap exploitation. currently:
