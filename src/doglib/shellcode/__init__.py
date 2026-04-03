@@ -54,15 +54,22 @@ minshell = ShellcodeSet("minshell")
 # Generators
 # ---------------------------------------------------------------------------
 
-def run(path: str, argv: list[str] | None = None, ctx: str | None = None) -> bytes:
-    with _sc(ctx) as sc:
-        return _asm(sc.linux.execve(path, argv if argv is not None else [path], 0))
-
 # run but simpler, assumes /bin/sh is present
 def runcmd(cmd: str, ctx: str | None = None) -> bytes:
     with _sc(ctx) as sc:
         return _asm(sc.linux.execve("/bin/sh", ["/bin/sh", "-c", cmd], 0))
 
+# lazy directory reading, just dump the raw dirent structs to stdout
+# you can parse this output with pwnlib.util.dirents
+def listdir(path: str, size: int = 0x1000, ctx: str | None = None) -> bytes:
+    with _sc(ctx) as sc:
+        code  = sc.linux.open(path, 'O_RDONLY|O_DIRECTORY')
+        code += f"sub rsp, {size:#x}\n"
+        code += sc.linux.syscall('SYS_getdents', 'rax', 'rsp', size)
+        code += sc.linux.syscall('SYS_write', 1, 'rsp', 'rax')
+        code += f"add rsp, {size:#x}\n"
+        return _asm(code)
+
 # ---------------------------------------------------------------------------
 
-__all__ = ["minshell", "run", "runcmd"]
+__all__ = ["minshell", "run", "runcmd", "listdir"]
