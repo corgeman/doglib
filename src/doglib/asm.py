@@ -10,6 +10,8 @@ Usage::
     kasm.amd64("nop; ret")
     cdis.arm(shellcode_bytes)
 """
+from pwnlib.context import context as _ctx
+
 
 # Each entry: (keystone arch, keystone mode(s), capstone arch, capstone mode(s))
 # Mode can be a single string or a tuple of strings OR'd together at call time.
@@ -82,6 +84,9 @@ class _AsmDis:
     
     def __getitem__(self, name: str):
         return self.__getattr__(name)
+
+    def __call__(self, *args, **kwargs):
+        return self[_ctx.arch](*args, **kwargs)
 
     def __repr__(self):
         return f"{self.__class__.__name__}(arches={list(_ARCHES)})"

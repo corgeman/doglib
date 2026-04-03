@@ -2,6 +2,7 @@ from pwnlib.rop import ROP
 from pwnlib.util.packing import p64
 
 
+# todo: fix stack alignment by pivoting over to __pthread_keys or something
 def quickrop(progs,ret=False,badchars=b""):
     r = ROP(progs,badchars=badchars)
     binsh = None

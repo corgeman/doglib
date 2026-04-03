@@ -24,3 +24,4 @@ ld*.so*
 *.bin
 research/
 TODO.md
+memory/
