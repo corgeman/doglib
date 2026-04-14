@@ -29,13 +29,15 @@ class DWARFCrafter:
 
         if backing is None:
             super().__setattr__('_backing', bytearray(size))
+            super().__setattr__('_is_root', True)
         else:
             super().__setattr__('_backing', backing)
+            super().__setattr__('_is_root', False)
 
     def __bytes__(self):
         end = self._offset + self._size
-        # Root views (offset 0) expose any OOB-extended backing so callers see what was written.
-        if self._offset == 0 and len(self._backing) > end:
+        # Root views expose any OOB-extended backing so callers see what was written.
+        if self._is_root and len(self._backing) > end:
             end = len(self._backing)
         return bytes(self._backing[self._offset : end])
 
@@ -702,7 +704,12 @@ class DWARFArrayCrafter:
         for d in self._dims:
             total_elems *= d
         self._total_bytes = self._elem_size * total_elems
-        self._backing = backing if backing is not None else bytearray(self._total_bytes)
+        if backing is not None:
+            self._backing = backing
+            self._is_root = False
+        else:
+            self._backing = bytearray(self._total_bytes)
+            self._is_root = True
 
     def _inner_count(self):
         return inner_count(self._dims)
@@ -768,8 +775,8 @@ class DWARFArrayCrafter:
     def __bytes__(self):
         start = self._base_offset
         end = start + self._total_bytes
-        # Root views (base_offset 0) expose any OOB-extended backing so callers see what was written.
-        if start == 0 and len(self._backing) > end:
+        # Root views expose any OOB-extended backing so callers see what was written.
+        if self._is_root and len(self._backing) > end:
             end = len(self._backing)
         return bytes(self._backing[start : end])
 
