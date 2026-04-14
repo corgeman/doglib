@@ -5,6 +5,19 @@ from dog import *
 # start cooking
 ```
 
+## install
+```bash
+# install directly
+pip install git+https://github.com/corgeman/doglib.git
+# or install with rust extensions (recommended if supported)
+pip install "doglib[rust] @ git+https://github.com/corgeman/doglib.git"
+
+# or install from local clone
+pip install .
+# with rust extensions
+pip install .[rust]
+```
+
 
 ## orc
 very useful debuginfo parser for CTFs.  
