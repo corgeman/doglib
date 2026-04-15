@@ -27,3 +27,7 @@ research/
 TODO.md
 memory/
 .coverage
+*.dwz
+
+# Downloaded test fixtures (ddeb cache, etc.)
+tests/_cache/

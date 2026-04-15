@@ -211,7 +211,7 @@ def test_clang_array_subranges_uses_count(change_to_test_dir, challenge_clang):
     arr_off = elf._dwarf_types.get('ArrayFun')
     if arr_off is None:
         pytest.skip("ArrayFun not in DWARF types (unexpected)")
-    struct_die = elf._get_dwarfinfo().get_DIE_from_refaddr(arr_off)
+    struct_die = elf._get_die(arr_off)
     # Walk children to find the 'arr' member
     arr_member = None
     for child in struct_die.iter_children():
@@ -246,7 +246,7 @@ def test_get_byte_size_subrange_start_past_end():
     t = ORCInline('struct S { int grid[2][3]; };')
     t._build_dwarf_cache()
     struct_off = t._dwarf_types['S']
-    struct_die = t._get_dwarfinfo().get_DIE_from_refaddr(struct_off)
+    struct_die = t._get_die(struct_off)
     # Find the grid member
     for child in struct_die.iter_children():
         if child.attributes.get('DW_AT_name') and child.attributes['DW_AT_name'].value == b'grid':
@@ -261,7 +261,7 @@ def test_get_byte_size_flexible_array_member():
     t = ORCInline('struct F { int x; int arr[]; };')
     t._build_dwarf_cache()
     struct_off = t._dwarf_types['F']
-    struct_die = t._get_dwarfinfo().get_DIE_from_refaddr(struct_off)
+    struct_die = t._get_die(struct_off)
     arr_die = None
     for child in struct_die.iter_children():
         name = child.attributes.get('DW_AT_name')
@@ -318,7 +318,7 @@ def test_get_type_name_typedef_returns_name():
     t = ORCInline('typedef int my_t; struct S { my_t x; };')
     t._build_dwarf_cache()
     struct_off = t._dwarf_types['S']
-    struct_die = t._get_dwarfinfo().get_DIE_from_refaddr(struct_off)
+    struct_die = t._get_die(struct_off)
     # Find the member type (a typedef DIE)
     for child in struct_die.iter_children():
         if child.attributes.get('DW_AT_name') and child.attributes['DW_AT_name'].value == b'x':
@@ -343,7 +343,7 @@ def test_get_type_name_void_pointer():
     t = ORCInline('struct V { void *p; };')
     t._build_dwarf_cache()
     struct_off = t._dwarf_types['V']
-    struct_die = t._get_dwarfinfo().get_DIE_from_refaddr(struct_off)
+    struct_die = t._get_die(struct_off)
     for child in struct_die.iter_children():
         name = child.attributes.get('DW_AT_name')
         if name and name.value == b'p':
@@ -361,7 +361,7 @@ def test_get_type_name_pointer_direct(headers):
     """Directly resolve the ptr member type and assert get_type_name returns 'char*'."""
     headers._build_dwarf_cache()
     struct_off = headers._dwarf_types['ArrayFun']
-    struct_die = headers._get_dwarfinfo().get_DIE_from_refaddr(struct_off)
+    struct_die = headers._get_die(struct_off)
     for child in struct_die.iter_children():
         name = child.attributes.get('DW_AT_name')
         if name and name.value == b'ptr':

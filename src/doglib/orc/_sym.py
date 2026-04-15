@@ -23,18 +23,17 @@ class _CVarAccessor:
         if base_addr is None:
             raise KeyError(f"Symbol '{name}' not found in ELF symbol table.")
 
-        var_die_offset = orc._dwarf_vars.get(name)
-        if not var_die_offset:
+        var_ref = orc._dwarf_vars.get(name)
+        if not var_ref:
             raise KeyError(f"Variable '{name}' not found in DWARF info. Does it have debug symbols?")
 
-        dwarfinfo = orc._get_dwarfinfo()
-        var_die = dwarfinfo.get_DIE_from_refaddr(var_die_offset)
+        var_die = orc._get_die(var_ref)
         type_die = orc._get_die_from_attr(var_die, 'DW_AT_type')
 
         if not type_die:
             raise KeyError(f"Missing type info for variable '{name}'.")
 
-        return DWARFAddress(base_addr, orc, type_die.offset)
+        return DWARFAddress(base_addr, orc, orc._ref(type_die))
 
     def __contains__(self, name):
         orc = self._elf.orc

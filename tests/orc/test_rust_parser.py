@@ -1,51 +1,136 @@
 """
-Tests for the Rust DWARF parser (doglib_rs.dwarf_parser).
+Parser-parity tests: Rust DWARF parser vs pyelftools fallback.
 
-Verifies that the Rust parser's output matches pyelftools across
-ET_REL, ET_EXEC, C++, and glibc inputs. Also tests the Python
-fallback path when the Rust parser returns empty results.
+For every input binary we run both production code paths of
+``ORC._build_dwarf_cache`` and assert that the resulting
+``(_dwarf_vars, _dwarf_types)`` dicts are identical:
+
+  1. Python path  — ``_orc._dwarf_parser_rs`` is temporarily set to ``None``
+                    so the fallback pyelftools walk runs.
+  2. Rust path    — ``_orc._dwarf_parser_rs`` holds the real extension module.
+
+Running the test through the *production* path (rather than a shadow
+re-implementation) means declaration filtering, CACHEABLE_TAGS, and any
+future logic changes are automatically covered by both sides.
+
+Test inputs
+-----------
+- Tier 1 (always): synthetic type-zoo sources covering every notable DWARF
+  construct (compiled at session start by conftest fixtures).
+- Tier 2 (network, cached): Ubuntu debug packages downloaded from
+  ddebs.ubuntu.com; skipped when offline or SKIP_NETWORK_TESTS=1.
+- Legacy (preserved): the small inline point/line .o, the challenge.elf
+  executable, and the C++ inline .o from the original test suite.
 
 Run from the project root:
-    pytest tests/orc/test_rust_parser.py
+    pytest tests/orc/test_rust_parser.py -v
 """
 import os
 import subprocess
+import tempfile
+import unittest.mock
 
 import pytest
-from elftools.elf.elffile import ELFFile
+from pwnlib.context import context
 
 
-_PYELF_CACHEABLE_TAGS = (
-    'DW_TAG_variable', 'DW_TAG_structure_type', 'DW_TAG_class_type',
-    'DW_TAG_union_type', 'DW_TAG_typedef', 'DW_TAG_enumeration_type',
-    'DW_TAG_base_type',
-)
+# ── helper: run both production code paths ───────────────────────────────────
+
+def _parse_both_paths(path: str) -> tuple[dict, dict, dict, dict]:
+    """
+    Parse ``path`` via both ``_build_dwarf_cache`` code paths.
+
+    Returns ``(py_vars, py_types, rs_vars, rs_types)``.
+
+    Each run uses an isolated cache directory so neither run reads a stale
+    on-disk JSON from the other.
+
+    Calls ``pytest.skip()`` if ``doglib_rs`` is not installed.
+    """
+    from doglib.orc import _orc as orc_mod
+    from doglib.orc import ORC
+
+    if orc_mod._dwarf_parser_rs is None:
+        pytest.skip("doglib_rs not installed")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        py_cache = os.path.join(tmp, "py")
+        rs_cache = os.path.join(tmp, "rs")
+        os.makedirs(py_cache)
+        os.makedirs(rs_cache)
+
+        # Python fallback path
+        with unittest.mock.patch.object(orc_mod, "_dwarf_parser_rs", None):
+            with context.local(cache_dir=py_cache):
+                elf = ORC(path)
+                elf._build_dwarf_cache()
+                py_vars  = dict(elf._dwarf_vars)
+                py_types = dict(elf._dwarf_types)
+
+        # Rust fast path
+        with context.local(cache_dir=rs_cache):
+            elf = ORC(path)
+            elf._build_dwarf_cache()
+            rs_vars  = dict(elf._dwarf_vars)
+            rs_types = dict(elf._dwarf_types)
+
+    return py_vars, py_types, rs_vars, rs_types
 
 
-def _pyelf_parse(path):
-    """Reference parser using pyelftools — mirrors _build_dwarf_cache logic."""
-    pe_vars, pe_types = {}, {}
-    with open(path, 'rb') as f:
-        elf = ELFFile(f)
-        if not elf.has_dwarf_info():
-            return pe_vars, pe_types
-        for CU in elf.get_dwarf_info().iter_CUs():
-            for die in CU.iter_DIEs():
-                if die.tag in _PYELF_CACHEABLE_TAGS:
-                    attr = die.attributes.get('DW_AT_name')
-                    if attr:
-                        name = attr.value.decode('utf-8', errors='ignore')
-                        if die.tag == 'DW_TAG_variable':
-                            pe_vars[name] = die.offset
-                        else:
-                            pe_types[name] = die.offset
-    return pe_vars, pe_types
+def _assert_parity(path: str, label: str = ""):
+    """Run parity check and produce a useful diff on failure."""
+    py_vars, py_types, rs_vars, rs_types = _parse_both_paths(path)
+    tag = f" [{label}]" if label else f" [{os.path.basename(path)}]"
 
+    only_py_vars  = set(py_vars)  - set(rs_vars)
+    only_rs_vars  = set(rs_vars)  - set(py_vars)
+    only_py_types = set(py_types) - set(rs_types)
+    only_rs_types = set(rs_types) - set(py_types)
+
+    msgs = []
+    if only_py_vars:
+        msgs.append(f"vars only in Python{tag}: {sorted(only_py_vars)[:10]}")
+    if only_rs_vars:
+        msgs.append(f"vars only in Rust{tag}: {sorted(only_rs_vars)[:10]}")
+    if only_py_types:
+        msgs.append(f"types only in Python{tag}: {sorted(only_py_types)[:20]}")
+    if only_rs_types:
+        msgs.append(f"types only in Rust{tag}: {sorted(only_rs_types)[:20]}")
+
+    # Also check that offsets agree for the shared keys
+    var_offset_diff = {
+        k for k in py_vars if k in rs_vars and py_vars[k] != rs_vars[k]
+    }
+    type_offset_diff = {
+        k for k in py_types if k in rs_types and py_types[k] != rs_types[k]
+    }
+    if var_offset_diff:
+        msgs.append(f"var offset mismatch{tag}: {sorted(var_offset_diff)[:10]}")
+    if type_offset_diff:
+        msgs.append(f"type offset mismatch{tag}: {sorted(type_offset_diff)[:10]}")
+
+    assert not msgs, "\n".join(msgs)
+
+
+# ── Tier 1: synthetic type zoo ───────────────────────────────────────────────
+
+def test_parity_type_zoo_c(change_to_test_dir, type_zoo_gcc):
+    """Parity on type_zoo.c: bitfields, flex arrays, atomics, fn ptrs, etc."""
+    path = os.path.join(os.path.dirname(__file__), type_zoo_gcc)
+    _assert_parity(path, "type_zoo_c")
+
+
+def test_parity_type_zoo_cpp(change_to_test_dir, type_zoo_gpp):
+    """Parity on type_zoo.cpp: templates, virtual inheritance, enum class, etc."""
+    path = os.path.join(os.path.dirname(__file__), type_zoo_gpp)
+    _assert_parity(path, "type_zoo_cpp")
+
+
+# ── Tier 1: legacy inline binaries (kept from original suite) ────────────────
 
 def test_parity_et_rel(tmp_path):
-    """Rust parser matches pyelftools on a relocatable .o file (ET_REL)."""
-    doglib_rs = pytest.importorskip("doglib_rs")
-    dwarf_rs = doglib_rs.dwarf_parser
+    """Parity on a relocatable .o (ET_REL) with simple nested structs."""
+    pytest.importorskip("doglib_rs")
 
     src = tmp_path / "test.h"
     src.write_text(
@@ -58,29 +143,18 @@ def test_parity_et_rel(tmp_path):
          str(src), "-o", str(obj)],
         check=True,
     )
-
-    pe_vars, pe_types = _pyelf_parse(str(obj))
-    rs_vars, rs_types = dwarf_rs.parse_dwarf(str(obj))
-    assert rs_vars == pe_vars
-    assert rs_types == pe_types
+    _assert_parity(str(obj), "et_rel")
 
 
 def test_parity_et_exec(change_to_test_dir, challenge_gcc):
-    """Rust parser matches pyelftools on a linked executable (ET_EXEC)."""
-    doglib_rs = pytest.importorskip("doglib_rs")
-    dwarf_rs = doglib_rs.dwarf_parser
-
+    """Parity on the compiled challenge.elf (ET_EXEC)."""
     path = os.path.join(os.path.dirname(__file__), challenge_gcc)
-    pe_vars, pe_types = _pyelf_parse(path)
-    rs_vars, rs_types = dwarf_rs.parse_dwarf(path)
-    assert rs_vars == pe_vars
-    assert rs_types == pe_types
+    _assert_parity(path, "et_exec")
 
 
-def test_parity_cpp(tmp_path):
-    """Rust parser matches pyelftools on a C++ .o with classes and namespaces."""
-    doglib_rs = pytest.importorskip("doglib_rs")
-    dwarf_rs = doglib_rs.dwarf_parser
+def test_parity_cpp_inline(tmp_path):
+    """Parity on an inline C++ .o with classes, namespaces, and enums."""
+    pytest.importorskip("doglib_rs")
 
     src = tmp_path / "cpp_test.cpp"
     src.write_text(
@@ -98,40 +172,18 @@ def test_parity_cpp(tmp_path):
          str(src), "-o", str(obj)],
         check=True,
     )
-
-    pe_vars, pe_types = _pyelf_parse(str(obj))
-    rs_vars, rs_types = dwarf_rs.parse_dwarf(str(obj))
-    assert rs_vars == pe_vars
-    assert rs_types == pe_types
-    assert "Animal" in rs_types, "DW_TAG_class_type should be indexed"
+    py_vars, py_types, rs_vars, rs_types = _parse_both_paths(str(obj))
+    assert rs_vars  == py_vars
+    assert rs_types == py_types
+    assert "Animal"   in rs_types, "DW_TAG_class_type should be indexed"
     assert "Position" in rs_types
-    assert "Player" in rs_types
-    assert "Color" in rs_types
-
-
-_GLIBC_PATH = "/home/corgo/pwn/tools/latest_glibc/libc6_2.23-0ubuntu11.3_amd64.so"
-
-
-@pytest.mark.skipif(
-    not os.path.exists(_GLIBC_PATH),
-    reason="glibc test binary not available",
-)
-def test_parity_glibc():
-    """Rust parser matches pyelftools on a real glibc with debug info."""
-    doglib_rs = pytest.importorskip("doglib_rs")
-    dwarf_rs = doglib_rs.dwarf_parser
-
-    pe_vars, pe_types = _pyelf_parse(_GLIBC_PATH)
-    rs_vars, rs_types = dwarf_rs.parse_dwarf(_GLIBC_PATH)
-    assert rs_vars == pe_vars
-    assert rs_types == pe_types
-    assert len(rs_types) > 100, "Expected many types in glibc"
+    assert "Player"   in rs_types
+    assert "Color"    in rs_types
 
 
 def test_parity_no_dwarf(tmp_path):
-    """Rust parser returns empty dicts for a binary with no debug info."""
-    doglib_rs = pytest.importorskip("doglib_rs")
-    dwarf_rs = doglib_rs.dwarf_parser
+    """Both paths return empty dicts for a binary compiled without -g."""
+    pytest.importorskip("doglib_rs")
 
     src = tmp_path / "nodebug.c"
     src.write_text("int main() { return 0; }\n")
@@ -140,11 +192,47 @@ def test_parity_no_dwarf(tmp_path):
         ["gcc", "-x", "c", "-c", str(src), "-o", str(obj)],
         check=True,
     )
+    py_vars, py_types, rs_vars, rs_types = _parse_both_paths(str(obj))
+    assert rs_vars  == py_vars  == {}
+    assert rs_types == py_types == {}
 
-    rs_vars, rs_types = dwarf_rs.parse_dwarf(str(obj))
-    assert rs_vars == {}
-    assert rs_types == {}
 
+# ── Tier 2: Ubuntu ddeb debug packages ───────────────────────────────────────
+
+def _ddeb_params(ddeb_suite):
+    """Build pytest parametrize IDs from the ddeb_suite fixture."""
+    return [(label, path) for label, path in ddeb_suite]
+
+
+def test_parity_ddeb(change_to_test_dir, ddeb_suite, request):
+    """
+    Parametrized parity check over downloaded Ubuntu ddeb debug libraries.
+
+    Each entry in ``ddeb_suite`` is a (label, .so path) pair.  The test is
+    skipped entirely when ``ddeb_suite`` is empty (offline or non-Debian host).
+    """
+    pytest.importorskip("doglib_rs")
+    if not ddeb_suite:
+        pytest.skip("no ddeb packages available (offline or non-Debian host)")
+
+    failures = []
+    for label, path in ddeb_suite:
+        try:
+            _assert_parity(path, label)
+        except AssertionError as exc:
+            failures.append(str(exc))
+
+    if failures:
+        pytest.fail("\n\n".join(failures))
+
+
+# Individual ddeb parametrize variant (verbose mode expands each package)
+@pytest.mark.parametrize("label,path", [], indirect=False)
+def _test_parity_ddeb_parametrized(label, path):  # pragma: no cover
+    _assert_parity(path, label)
+
+
+# ── Fallback-behaviour tests (unchanged from original suite) ─────────────────
 
 def test_rust_parser_exception_fallback(change_to_test_dir, challenge_gcc, monkeypatch):
     """When the Rust parser raises an exception, Python falls back to pyelftools."""
@@ -160,27 +248,26 @@ def test_rust_parser_exception_fallback(change_to_test_dir, challenge_gcc, monke
     from doglib.orc import ORC
     elf = ORC(f"./{challenge_gcc}")
     elf._dwarf_parsed = False
-    elf._dwarf_vars = {}
-    elf._dwarf_types = {}
+    elf._dwarf_vars   = {}
+    elf._dwarf_types  = {}
     elf._build_dwarf_cache()
     assert "Basic" in elf._dwarf_types, "Should fall back to pyelftools when Rust raises"
 
 
 def test_rust_fallback(change_to_test_dir, challenge_gcc, monkeypatch):
-    """When the Rust parser returns empty, Python falls back to pyelftools."""
+    """When the Rust parser returns empty dicts, Python falls back to pyelftools."""
     from doglib.orc import _orc as elf_module
     if elf_module._dwarf_parser_rs is None:
         pytest.skip("Rust parser not installed")
 
-    def mock_parse(_path):
-        return ({}, {})
-
-    monkeypatch.setattr(elf_module._dwarf_parser_rs, "parse_dwarf", mock_parse)
+    monkeypatch.setattr(
+        elf_module._dwarf_parser_rs, "parse_dwarf", lambda _path: ({}, {})
+    )
 
     from doglib.orc import ORC
     elf = ORC(f"./{challenge_gcc}")
     elf._dwarf_parsed = False
-    elf._dwarf_vars = {}
-    elf._dwarf_types = {}
+    elf._dwarf_vars   = {}
+    elf._dwarf_types  = {}
     elf._build_dwarf_cache()
     assert "Basic" in elf._dwarf_types, "Should fall back to pyelftools when Rust returns empty"

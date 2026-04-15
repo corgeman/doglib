@@ -10,8 +10,7 @@ class DWARFEnum:
         self._orc = orc
         self._type_die_offset = type_die_offset
         self._constants = {}
-        dwarfinfo = orc._get_dwarfinfo()
-        die = dwarfinfo.get_DIE_from_refaddr(type_die_offset)
+        die = orc._get_die(type_die_offset)
         die = orc._unwrap_type(die)
         if die and die.tag == 'DW_TAG_enumeration_type':
             for child in die.iter_children():

@@ -19,8 +19,7 @@ class DWARFCrafter:
         super().__setattr__('_type_die_offset', type_die_offset)
         super().__setattr__('_subrange_start', subrange_start)
 
-        dwarfinfo = orc._get_dwarfinfo()
-        die = dwarfinfo.get_DIE_from_refaddr(type_die_offset)
+        die = orc._get_die(type_die_offset)
         current_die = orc._unwrap_type(die)
         size = orc._get_byte_size(current_die, subrange_start)
 
@@ -46,8 +45,7 @@ class DWARFCrafter:
 
     def __repr__(self):
         try:
-            dwarfinfo = self._orc._get_dwarfinfo()
-            die = dwarfinfo.get_DIE_from_refaddr(self._type_die_offset)
+            die = self._orc._get_die(self._type_die_offset)
             current_die = self._orc._unwrap_type(die)
             type_name = self._orc._get_type_name(die)
 
@@ -91,7 +89,7 @@ class DWARFCrafter:
                         parts.append(f"{field_name}=<{self._orc._get_type_name(field_type_die)}>")
                         continue
                     offset = self._orc._parse_member_offset(child)
-                    sub = DWARFCrafter(self._orc, field_type_die.offset, self._backing, self._offset + offset)
+                    sub = DWARFCrafter(self._orc, self._orc._ref(field_type_die), self._backing, self._offset + offset)
                     parts.append(f"{field_name}={repr(sub)}")
                 body = ', '.join(parts)
                 return f"<{type_name} {{{body}}}>"
@@ -133,7 +131,7 @@ class DWARFCrafter:
 
     def _get_current_die(self):
         """Return the unwrapped DWARF DIE for this crafter's type."""
-        die = self._orc._get_dwarfinfo().get_DIE_from_refaddr(self._type_die_offset)
+        die = self._orc._get_die(self._type_die_offset)
         return self._orc._unwrap_type(die)
 
     @property
@@ -368,7 +366,7 @@ class DWARFCrafter:
             member_offset, member_type_die = self._resolve_field(name)
         except AttributeError:
             raise AttributeError(name)
-        return DWARFCrafter(self._orc, member_type_die.offset, self._backing, self._offset + member_offset)
+        return DWARFCrafter(self._orc, self._orc._ref(member_type_die), self._backing, self._offset + member_offset)
 
     def __setattr__(self, name, value):
         # True Python dunders (__foo__) are stored on the Python object, not the
@@ -378,7 +376,7 @@ class DWARFCrafter:
         if name.startswith('__') and name.endswith('__'):
             return super().__setattr__(name, value)
         if name == 'value':
-            die = self._orc._get_dwarfinfo().get_DIE_from_refaddr(self._type_die_offset)
+            die = self._orc._get_die(self._type_die_offset)
             self._write_value(0, die, value)
             return
         member_offset, member_type_die = self._resolve_field(name)
@@ -406,7 +404,7 @@ class DWARFCrafter:
                 member_offset, member_type_die = self._resolve_field(index)
             except AttributeError as e:
                 raise KeyError(index) from e
-            return DWARFCrafter(self._orc, member_type_die.offset, self._backing,
+            return DWARFCrafter(self._orc, self._orc._ref(member_type_die), self._backing,
                                 self._offset + member_offset)
         if isinstance(index, slice):
             length = self._current_array_length()
@@ -414,7 +412,7 @@ class DWARFCrafter:
         elem_offset, type_die, sub_start = self._resolve_index(index)
         abs_off = self._offset + elem_offset
         self._check_crafter_offset(abs_off)
-        return DWARFCrafter(self._orc, type_die.offset, self._backing, abs_off, sub_start)
+        return DWARFCrafter(self._orc, self._orc._ref(type_die), self._backing, abs_off, sub_start)
 
     def __setitem__(self, index, value):
         if isinstance(index, str):
@@ -485,7 +483,7 @@ class DWARFCrafter:
                 continue
 
             field_name = name_attr.value.decode('utf-8')
-            yield field_name, DWARFCrafter(self._orc, field_type_die.offset, self._backing, offset)
+            yield field_name, DWARFCrafter(self._orc, self._orc._ref(field_type_die), self._backing, offset)
 
     def dump(self):
         """
@@ -500,8 +498,7 @@ class DWARFCrafter:
         current_die = self._get_current_die()
         if current_die.tag not in STRUCT_TAGS:
             raise TypeError(f"dump() only works on struct/union types, not {current_die.tag}")
-        dwarfinfo = self._orc._get_dwarfinfo()
-        die = dwarfinfo.get_DIE_from_refaddr(self._type_die_offset)
+        die = self._orc._get_die(self._type_die_offset)
         type_name = self._orc._get_type_name(die)
         print(f"{type_name}:")
         self._dump_lines(indent=2)
@@ -528,7 +525,7 @@ class DWARFCrafter:
             return [_collect_vals(el, remaining_dims[1:]) for el in crafter]
 
         for field_name, field in self.items():
-            field_die = dwarfinfo.get_DIE_from_refaddr(field._type_die_offset)
+            field_die = self._orc._get_die(field._type_die_offset)
             field_unwrapped = self._orc._unwrap_type(field_die)
 
             if field_unwrapped and field_unwrapped.tag == 'DW_TAG_array_type':
@@ -698,7 +695,7 @@ class DWARFArrayCrafter:
         self._type_die_offset = type_die_offset
         self._dims = (dims,) if isinstance(dims, int) else tuple(dims)
         self._base_offset = base_offset
-        die = orc._get_dwarfinfo().get_DIE_from_refaddr(type_die_offset)
+        die = orc._get_die(type_die_offset)
         self._elem_size = orc._get_byte_size(die)
         total_elems = 1
         for d in self._dims:
@@ -781,7 +778,7 @@ class DWARFArrayCrafter:
         return bytes(self._backing[start : end])
 
     def __repr__(self):
-        die = self._orc._get_dwarfinfo().get_DIE_from_refaddr(self._type_die_offset)
+        die = self._orc._get_die(self._type_die_offset)
         type_name = self._orc._get_type_name(die)
         return f"<DWARFArrayCrafter {type_name}{dims_str(self._dims)} size={self._total_bytes}>"
 

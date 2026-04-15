@@ -162,23 +162,21 @@ def resolve_field(self, symbol_name, field_path=None, struct_name=None):
 
     orc = self.orc
     orc._build_dwarf_cache()
-    dwarfinfo = orc._get_dwarfinfo()
-
     if struct_name:
-        start_die_offset = orc._resolve_type_name(struct_name)
-        if not start_die_offset:
+        start_ref = orc._resolve_type_name(struct_name)
+        if not start_ref:
             log.error(f"Struct '{struct_name}' not found in DWARF info.")
     else:
-        var_die_offset = orc._dwarf_vars.get(symbol_name)
-        if not var_die_offset:
+        var_ref = orc._dwarf_vars.get(symbol_name)
+        if not var_ref:
             log.error(f"Variable '{symbol_name}' not found in DWARF info. Try passing struct_name explicitly.")
-        var_die = dwarfinfo.get_DIE_from_refaddr(var_die_offset)
+        var_die = orc._get_die(var_ref)
         type_die = orc._get_die_from_attr(var_die, 'DW_AT_type')
         if not type_die:
             return None
-        start_die_offset = type_die.offset
+        start_ref = orc._ref(type_die)
 
-    start_die = dwarfinfo.get_DIE_from_refaddr(start_die_offset)
+    start_die = orc._get_die(start_ref)
     tokens = orc._tokenize_path(field_path)
 
     try:

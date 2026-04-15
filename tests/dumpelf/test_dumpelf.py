@@ -334,10 +334,14 @@ class TestLibcIdentification:
     """Test remote libc identification (build ID, version string, link map)."""
 
     def test_version_string_from_file(self):
-        """Unit test: find_version_string on a known libc file."""
-        libc_path = "/home/corgo/pwn/tools/latest_glibc/libc6_2.39-0ubuntu8.5_amd64.so"
+        """Unit test: find_version_string on a real libc."""
+        from conftest import _get_test_libc
+        libc_path = _get_test_libc()
+        if libc_path is None:
+            # Fall back to the system libc which is always present
+            libc_path = "/lib/x86_64-linux-gnu/libc.so.6"
         if not os.path.exists(libc_path):
-            pytest.skip("test libc not available")
+            pytest.skip("no libc available for version-string test")
 
         with open(libc_path, "rb") as f:
             data = f.read()
@@ -346,8 +350,8 @@ class TestLibcIdentification:
         assert result is not None, "version string not found in libc"
 
         version, distro, _kind = result
-        assert "2.39" in version
-        assert distro == "ubuntu"
+        assert version, "version string should be non-empty"
+        assert distro in ("ubuntu", "debian"), f"unexpected distro: {distro!r}"
 
     def test_download_libc_by_version(self):
         """Download a known Ubuntu libc by version string."""

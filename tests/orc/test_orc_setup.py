@@ -3,11 +3,13 @@ Tests for ORC setup, built-in types, and ELF hijack patches.
 
 Covers: C64 stdint type sizes, ELF.sym_obj / ELF.resolve_field hijack,
 ORCHeader include-dirs / missing-file / invalid-header, _Bool round-trip,
-C++ class type labels (DW_TAG_class_type), and forward-declaration skipping.
+C++ class type labels (DW_TAG_class_type), forward-declaration skipping,
+and supplementary DWARF build-ID verification.
 """
 import os
 
 import pytest
+from elftools.elf.elffile import ELFFile
 from pwnlib.exception import PwnlibException
 
 from doglib.orc import ORCHeader, ORCInline, C64
@@ -211,3 +213,5 @@ def test_declaration_skipping_python_parser():
     c.x = 1; c.y = 2
     assert c.x.value == 1
     assert c.y.value == 2
+
+

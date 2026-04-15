@@ -1,6 +1,7 @@
 import os
 import re
 import json
+import stat
 import hashlib
 import struct
 from pwnlib.log import getLogger
@@ -26,7 +27,15 @@ class ORC:
     DWARF-powered C type toolkit. Parses debug information from ELF binaries
     to provide struct crafting, parsing, casting, and type introspection.
     """
-    _CACHE_VERSION = 5
+    _CACHE_VERSION = 8
+
+    # DIE references stored in the DWARF cache / on DWARFAddress / DWARFCrafter
+    # etc. are 2-tuples: (die_offset, source) where source is 0 for the main
+    # binary's .debug_info or 1 for a supplementary file (.dwz / .debug_sup).
+    # JSON serializes these as [offset, source]; list-vs-tuple is immaterial to
+    # consumers, which only index the pair.
+    _SRC_MAIN = 0
+    _SRC_SUP = 1
 
     def __init__(self, path, bits=None):
         self.path = os.path.abspath(path)
@@ -113,7 +122,65 @@ class ORC:
             elffile = ELFFile(self._dwarf_file)
             if elffile.has_dwarf_info():
                 self._dwarfinfo = elffile.get_dwarf_info()
+                sup = self._load_supplementary(elffile)
+                if sup is not None:
+                    self._dwarfinfo.supplementary_dwarfinfo = sup
         return self._dwarfinfo
+
+    def _load_supplementary(self, elffile):
+        """
+        Load the supplementary DWARF file referenced by a .debug_sup (DWARF 5)
+        or .gnu_debugaltlink (GNU extension) section, if one is present.
+
+        Returns a DWARFInfo, or None if the supplementary file is unavailable.
+        """
+        sup_filename = self._dwarfinfo.parse_debugsupinfo()
+        if sup_filename is None:
+            return None
+        if isinstance(sup_filename, bytes):
+            sup_filename = sup_filename.decode('utf-8', errors='replace')
+
+        candidates = [sup_filename]
+        if not os.path.isabs(sup_filename):
+            candidates.append(os.path.join(os.path.dirname(self.path), sup_filename))
+
+        for candidate in candidates:
+            try:
+                # Skip non-regular files so we don't hang on FIFOs or read
+                # arbitrarily-large data from device nodes.
+                if not stat.S_ISREG(os.stat(candidate).st_mode):
+                    continue
+                with open(candidate, 'rb') as sup_f:
+                    sup_elf = ELFFile(sup_f)
+                    if not sup_elf.has_dwarf_info():
+                        continue
+                    # All section data is copied into BytesIO by pyelftools, so
+                    # the file can be closed after get_dwarf_info() returns.
+                    return sup_elf.get_dwarf_info()
+            except OSError:
+                continue
+
+        return None
+
+    def _ref(self, die):
+        """Return a (offset, source) tuple identifying *die* across main/sup DWARFInfo objects.
+
+        All code that stores a DIE for later retrieval must use this instead of
+        die.offset, so _get_die can route the lookup to the correct DWARFInfo.
+        """
+        dwarfinfo = self._get_dwarfinfo()
+        sup = getattr(dwarfinfo, 'supplementary_dwarfinfo', None)
+        if sup is not None and die.cu.dwarfinfo is sup:
+            return (die.offset, self._SRC_SUP)
+        return (die.offset, self._SRC_MAIN)
+
+    def _get_die(self, ref):
+        """Resolve a (offset, source) DieRef to a pyelftools DIE."""
+        offset, src = ref
+        dwarfinfo = self._get_dwarfinfo()
+        if src == self._SRC_SUP:
+            return dwarfinfo.supplementary_dwarfinfo.get_DIE_from_refaddr(offset)
+        return dwarfinfo.get_DIE_from_refaddr(offset)
 
     def _get_die_from_attr(self, die, attr_name):
         return self._get_resolver().get_die_from_attr(die, attr_name)
@@ -265,19 +332,41 @@ class ORC:
             self._dwarf_parsed = True
             return
 
-        for CU in dwarfinfo.iter_CUs():
-            for die in CU.iter_DIEs():
-                if die.tag in CACHEABLE_TAGS:
+        sup = getattr(dwarfinfo, 'supplementary_dwarfinfo', None)
+
+        def _index_dwarfinfo(di, src):
+            for CU in di.iter_CUs():
+                for die in CU.iter_DIEs():
+                    if die.tag not in CACHEABLE_TAGS:
+                        continue
                     name_attr = die.attributes.get('DW_AT_name')
-                    if name_attr:
-                        is_decl = die.attributes.get('DW_AT_declaration')
-                        if is_decl and is_decl.value:
+                    if not name_attr:
+                        continue
+                    is_decl = die.attributes.get('DW_AT_declaration')
+                    if is_decl and is_decl.value:
+                        continue
+                    name_val = name_attr.value
+                    if isinstance(name_val, int):
+                        # DW_FORM_GNU_strp_alt / DW_FORM_strp_sup: the name
+                        # lives in the supplementary .debug_str table.
+                        if sup is None:
                             continue
-                        name = name_attr.value.decode('utf-8', errors='ignore')
-                        if die.tag == 'DW_TAG_variable':
-                            self._dwarf_vars[name] = die.offset
-                        else:
-                            self._dwarf_types[name] = die.offset
+                        try:
+                            name_val = sup.get_string_from_table(name_val)
+                        except Exception:
+                            continue
+                    if not isinstance(name_val, bytes):
+                        continue
+                    name = name_val.decode('utf-8', errors='ignore')
+                    ref = (die.offset, src)
+                    if die.tag == 'DW_TAG_variable':
+                        self._dwarf_vars[name] = ref
+                    else:
+                        self._dwarf_types[name] = ref
+
+        _index_dwarfinfo(dwarfinfo, self._SRC_MAIN)
+        if sup is not None:
+            _index_dwarfinfo(sup, self._SRC_SUP)
 
         self._save_dwarf_cache(cache_file)
 
@@ -309,18 +398,18 @@ class ORC:
         self._build_dwarf_cache()
         dot = type_name.find('.')
         if dot == -1:
-            offset = self._resolve_type_name(type_name)
-            if offset is None:
+            ref = self._resolve_type_name(type_name)
+            if ref is None:
                 raise ValueError(f"Type '{type_name}' not found in DWARF info.")
-            return 0, self._get_dwarfinfo().get_DIE_from_refaddr(offset)
+            return 0, self._get_die(ref)
 
         base_name = type_name[:dot]
         field_path = type_name[dot + 1:]
 
-        base_offset = self._resolve_type_name(base_name)
-        if base_offset is None:
+        base_ref = self._resolve_type_name(base_name)
+        if base_ref is None:
             raise ValueError(f"Type '{base_name}' not found in DWARF info.")
-        base_die = self._get_dwarfinfo().get_DIE_from_refaddr(base_offset)
+        base_die = self._get_die(base_ref)
 
         tokens = self._tokenize_path(field_path)
         try:
@@ -365,7 +454,7 @@ class ORC:
                 raise ValueError(f"Struct/Type '{base_name}' not found in DWARF info.")
         else:
             field_offset, field_die = self._resolve_dotpath_die(base_name)
-            type_die_offset = field_die.offset
+            type_die_offset = self._ref(field_die)
         if ptr_depth > 0:
             if ptr_depth > 1:
                 raise ValueError(
@@ -409,7 +498,7 @@ class ORC:
         if ptr_depth > 0:
             raise ValueError("Cannot craft a pointer type. Use craft('type[N]') for arrays.")
         _, field_die = self._resolve_dotpath_die(base_name)
-        type_die_offset = field_die.offset
+        type_die_offset = self._ref(field_die)
         dims = parsed_dims
         if dims is None and count is not None:
             dims = count if isinstance(count, tuple) else (count,)
@@ -419,7 +508,7 @@ class ORC:
                 dims = tuple(self._get_array_subranges(unwrapped))
                 elem_die = self._get_die_from_attr(unwrapped, 'DW_AT_type')
                 if elem_die and dims:
-                    type_die_offset = elem_die.offset
+                    type_die_offset = self._ref(elem_die)
         if dims:
             crafter = DWARFArrayCrafter(self, type_die_offset, dims)
         else:
@@ -460,7 +549,7 @@ class ORC:
         unwrapped = self._unwrap_type(die)
         if not unwrapped or unwrapped.tag != 'DW_TAG_enumeration_type':
             raise ValueError(f"'{type_name}' is not an enum type.")
-        return DWARFEnum(self, die.offset)
+        return DWARFEnum(self, self._ref(die))
 
     def sizeof(self, type_name):
         """

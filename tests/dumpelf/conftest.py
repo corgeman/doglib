@@ -5,9 +5,21 @@ import tempfile
 
 import pytest
 
+from doglib.libc import download_libc_by_version
+
 TEST_DIR = os.path.dirname(__file__)
-LIBC_DIR = "/home/corgo/pwn/tools/latest_glibc"
-TEST_LIBC = os.path.join(LIBC_DIR, "libc6_2.39-0ubuntu8.5_amd64.so")
+
+# Version used by the patched-libc fixture.  Any Ubuntu 2.39 build works for
+# the version-string test; the exact patchlevel is pinned so the expected
+# build-ID constant below stays correct.
+_PINNED_VERSION = "2.39-0ubuntu8.5"
+_PINNED_ARCH    = "amd64"
+_PINNED_BUILD_ID = "282c2c16e7b6600b0b22ea0c99010d2795752b5f"
+
+
+def _get_test_libc() -> str | None:
+    """Return a path to the pinned libc, downloading it if necessary."""
+    return download_libc_by_version(_PINNED_VERSION, "ubuntu", _PINNED_ARCH)
 
 
 @pytest.fixture(autouse=True)
@@ -80,8 +92,9 @@ def target_patched_libc():
         build_id:  expected build ID of the libc (hex string)
         work_dir:  temporary directory (cleaned up after tests)
     """
-    if not os.path.exists(TEST_LIBC):
-        pytest.skip("Test libc not found at %s" % TEST_LIBC)
+    test_libc = _get_test_libc()
+    if test_libc is None:
+        pytest.skip("Test libc not available (no network or download failed)")
 
     work_dir = tempfile.mkdtemp(prefix="dumpelf_libc_test_")
     src = os.path.join(TEST_DIR, "target.c")
@@ -89,7 +102,7 @@ def target_patched_libc():
     libc_dst = os.path.join(work_dir, "libc.so")
 
     subprocess.check_call(["gcc", "-o", bin_path, src, "-no-pie"])
-    shutil.copy2(TEST_LIBC, libc_dst)
+    shutil.copy2(test_libc, libc_dst)
 
     subprocess.check_call(
         ["pwninit", "--bin", bin_path, "--libc", libc_dst],
@@ -114,7 +127,7 @@ def target_patched_libc():
     yield {
         "bin_path": patched,
         "libc_path": libc_dst,
-        "build_id": "282c2c16e7b6600b0b22ea0c99010d2795752b5f",
+        "build_id": _PINNED_BUILD_ID,
         "work_dir": work_dir,
     }
 

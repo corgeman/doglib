@@ -21,8 +21,7 @@ class DWARFAddress(int):
 
     def __repr__(self):
         try:
-            dwarfinfo = self._orc._get_dwarfinfo()
-            die = dwarfinfo.get_DIE_from_refaddr(self._type_die_offset)
+            die = self._orc._get_die(self._type_die_offset)
             type_name = self._orc._get_type_name(die)
         except Exception:
             type_name = '?'
@@ -43,8 +42,7 @@ class DWARFAddress(int):
         if name.startswith('__') and name.endswith('__'):
             raise AttributeError(name)
 
-        dwarfinfo = self._orc._get_dwarfinfo()
-        die = dwarfinfo.get_DIE_from_refaddr(self._type_die_offset)
+        die = self._orc._get_die(self._type_die_offset)
         current_die = self._orc._unwrap_type(die)
         mask = va_mask(self._orc.bits)
 
@@ -60,14 +58,13 @@ class DWARFAddress(int):
             raise AttributeError(f"Field '{name}' not found in struct")
 
         member_offset, next_type_die = result
-        return DWARFAddress((int(self) + member_offset) & mask, self._orc, next_type_die.offset)
+        return DWARFAddress((int(self) + member_offset) & mask, self._orc, self._orc._ref(next_type_die))
 
     def __getitem__(self, index):
         if not isinstance(index, int):
             raise TypeError("Array indices must be integers")
 
-        dwarfinfo = self._orc._get_dwarfinfo()
-        die = dwarfinfo.get_DIE_from_refaddr(self._type_die_offset)
+        die = self._orc._get_die(self._type_die_offset)
         current_die = self._orc._unwrap_type(die)
         mask = va_mask(self._orc.bits)
 
@@ -77,7 +74,7 @@ class DWARFAddress(int):
                 pointed = self._orc._unwrap_type(pointed)
                 elem_size = self._orc._get_byte_size(pointed)
                 new_addr = (int(self) + index * elem_size) & mask
-                return DWARFAddress(new_addr, self._orc, pointed.offset)
+                return DWARFAddress(new_addr, self._orc, self._orc._ref(pointed))
             elem_size = self._orc.bits // 8
             return (int(self) + index * elem_size) & mask
 
@@ -92,8 +89,8 @@ class DWARFAddress(int):
         new_addr = (int(self) + index * stride) & mask
 
         if remaining_len <= 1:
-            return DWARFAddress(new_addr, self._orc, elem_type.offset)
-        return DWARFAddress(new_addr, self._orc, current_die.offset, self._subrange_start + 1)
+            return DWARFAddress(new_addr, self._orc, self._orc._ref(elem_type))
+        return DWARFAddress(new_addr, self._orc, self._orc._ref(current_die), self._subrange_start + 1)
 
 
 class DWARFArray:
@@ -109,7 +106,7 @@ class DWARFArray:
         self._elem_type_offset = elem_type_offset
         self._dims = (dims,) if isinstance(dims, int) else tuple(dims)
         self._mask = va_mask(orc.bits)
-        die = orc._get_dwarfinfo().get_DIE_from_refaddr(elem_type_offset)
+        die = orc._get_die(elem_type_offset)
         self._elem_size = orc._get_byte_size(die)
 
     def _inner_count(self):
@@ -140,7 +137,7 @@ class DWARFArray:
             yield self[i]
 
     def __repr__(self):
-        die = self._orc._get_dwarfinfo().get_DIE_from_refaddr(self._elem_type_offset)
+        die = self._orc._get_die(self._elem_type_offset)
         type_name = self._orc._get_type_name(die)
         if self._dims == (None,):
             return f"<DWARFArray {hex(self._base)} type={type_name}*>"
