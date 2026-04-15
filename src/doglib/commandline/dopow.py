@@ -35,7 +35,7 @@ def main(args) -> None:
     try:
         do_pow(p)
     except ValueError as e:
-        log.error(f"PoW solving failed: {e}")
+        log.critical(f"PoW solving failed: {e}")
         sys.exit(1)
 
     p.interactive()

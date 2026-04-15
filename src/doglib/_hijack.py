@@ -156,7 +156,6 @@ def resolve_field(self, symbol_name, field_path=None, struct_name=None):
     base_addr = self.symbols.get(symbol_name)
     if base_addr is None:
         log.error(f"Symbol '{symbol_name}' not found in standard ELF symbol table.")
-        return None
 
     if not field_path:
         return base_addr
@@ -169,12 +168,10 @@ def resolve_field(self, symbol_name, field_path=None, struct_name=None):
         start_die_offset = orc._resolve_type_name(struct_name)
         if not start_die_offset:
             log.error(f"Struct '{struct_name}' not found in DWARF info.")
-            return None
     else:
         var_die_offset = orc._dwarf_vars.get(symbol_name)
         if not var_die_offset:
             log.error(f"Variable '{symbol_name}' not found in DWARF info. Try passing struct_name explicitly.")
-            return None
         var_die = dwarfinfo.get_DIE_from_refaddr(var_die_offset)
         type_die = orc._get_die_from_attr(var_die, 'DW_AT_type')
         if not type_die:
@@ -188,6 +185,5 @@ def resolve_field(self, symbol_name, field_path=None, struct_name=None):
         offset, _ = orc._walk_field_path(start_die, tokens)
     except ValueError as e:
         log.error(str(e))
-        return None
 
     return (base_addr + offset) & va_mask(orc.bits)

@@ -70,11 +70,9 @@ class ORCHeader(ORC):
                 cmd.extend([header_path, '-o', elf_path])
                 subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             except FileNotFoundError:
-                log.error("Failed to compile header: 'gcc' is not installed or not in PATH.")
-                raise
+                log.exception("Failed to compile header: 'gcc' is not installed or not in PATH.")
             except subprocess.CalledProcessError as e:
-                log.error(f"GCC failed to compile the header:\n{e.stderr.decode() if e.stderr else ''}")
-                raise
+                log.exception(f"GCC failed to compile the header:\n{e.stderr.decode() if e.stderr else ''}")
 
         super().__init__(elf_path, bits=bits)
 

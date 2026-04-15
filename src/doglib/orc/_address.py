@@ -49,7 +49,7 @@ class DWARFAddress(int):
         mask = va_mask(self._orc.bits)
 
         if current_die.tag == 'DW_TAG_pointer_type':
-            log.error(f"Cannot statically resolve through a pointer at '.{name}'. Dereference first.")
+            log.warning(f"Cannot statically resolve through a pointer at '.{name}'. Dereference first.")
             raise AttributeError(name)
 
         if current_die.tag not in STRUCT_TAGS:
