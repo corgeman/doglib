@@ -65,12 +65,12 @@ def test_parity_et_rel(tmp_path):
     assert rs_types == pe_types
 
 
-def test_parity_et_exec(change_to_test_dir):
+def test_parity_et_exec(change_to_test_dir, challenge_gcc):
     """Rust parser matches pyelftools on a linked executable (ET_EXEC)."""
     doglib_rs = pytest.importorskip("doglib_rs")
     dwarf_rs = doglib_rs.dwarf_parser
 
-    path = os.path.join(os.path.dirname(__file__), "challenge")
+    path = os.path.join(os.path.dirname(__file__), challenge_gcc)
     pe_vars, pe_types = _pyelf_parse(path)
     rs_vars, rs_types = dwarf_rs.parse_dwarf(path)
     assert rs_vars == pe_vars
@@ -146,7 +146,27 @@ def test_parity_no_dwarf(tmp_path):
     assert rs_types == {}
 
 
-def test_rust_fallback(change_to_test_dir, monkeypatch):
+def test_rust_parser_exception_fallback(change_to_test_dir, challenge_gcc, monkeypatch):
+    """When the Rust parser raises an exception, Python falls back to pyelftools."""
+    from doglib.orc import _orc as elf_module
+    if elf_module._dwarf_parser_rs is None:
+        pytest.skip("Rust parser not installed")
+
+    def mock_parse_raises(_path):
+        raise RuntimeError("simulated parser failure")
+
+    monkeypatch.setattr(elf_module._dwarf_parser_rs, "parse_dwarf", mock_parse_raises)
+
+    from doglib.orc import ORC
+    elf = ORC(f"./{challenge_gcc}")
+    elf._dwarf_parsed = False
+    elf._dwarf_vars = {}
+    elf._dwarf_types = {}
+    elf._build_dwarf_cache()
+    assert "Basic" in elf._dwarf_types, "Should fall back to pyelftools when Rust raises"
+
+
+def test_rust_fallback(change_to_test_dir, challenge_gcc, monkeypatch):
     """When the Rust parser returns empty, Python falls back to pyelftools."""
     from doglib.orc import _orc as elf_module
     if elf_module._dwarf_parser_rs is None:
@@ -158,7 +178,7 @@ def test_rust_fallback(change_to_test_dir, monkeypatch):
     monkeypatch.setattr(elf_module._dwarf_parser_rs, "parse_dwarf", mock_parse)
 
     from doglib.orc import ORC
-    elf = ORC("./challenge")
+    elf = ORC(f"./{challenge_gcc}")
     elf._dwarf_parsed = False
     elf._dwarf_vars = {}
     elf._dwarf_types = {}

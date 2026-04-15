@@ -22,6 +22,8 @@ CLAUDE.md
 libc.so.6
 ld*.so*
 *.bin
+*.challenge.elf
 research/
 TODO.md
 memory/
+.coverage

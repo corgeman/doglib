@@ -10,10 +10,10 @@ import pytest
 from pwnlib.util.packing import p64
 
 
-def test_challenge_solve(headers, chal_elf, chal_pwn_elf):
+def test_challenge_solve(headers, chal_elf, chal_pwn_elf, challenge_gcc):
     """Send correctly crafted structs through every level of the challenge."""
     from pwnlib.tubes.process import process
-    io = process("./challenge")
+    io = process(f"./{challenge_gcc}")
     try:
         # Level 1: Padding & Basics
         basic = headers.craft('Basic')
@@ -97,18 +97,17 @@ def test_challenge_solve(headers, chal_elf, chal_pwn_elf):
         io.close()
 
 
-def test_cpp_challenge_solve(change_to_test_dir):
+def test_cpp_challenge_solve(change_to_test_dir, challenge_gpp):
     """End-to-end solve of the C++ challenge binary using ORC."""
-    import os
     from doglib.orc import ORC
     from pwnlib.elf.elf import ELF
     from pwnlib.tubes.process import process as pwnprocess
     import pwnlib.context
     pwnlib.context.context.log_level = 'error'
 
-    orc = ORC("./challenge_cpp")
-    pwn_elf = ELF("./challenge_cpp", checksec=False)
-    p = pwnprocess("./challenge_cpp")
+    orc = ORC(f"./{challenge_gpp}")
+    pwn_elf = ELF(f"./{challenge_gpp}", checksec=False)
+    p = pwnprocess(f"./{challenge_gpp}")
 
     # Level 1: Simple class
     coords = orc.craft('Coords')

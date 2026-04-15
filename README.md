@@ -20,11 +20,10 @@ pip install .[rust]
 
 
 ## orc
-very useful debuginfo parser for CTFs.  
-by parsing debuginfo, work with structs in python:
+work with structs in every way you've ever dreamt of
 ```python
 from dog import *
-orc = ORC('./libc.so.6') # ELF has been patched to add this feature
+orc = ORC('./libc.so.6')
 
 heap_chunk_addr = 0x55555555b000
 chunk_struct = orc.cast('malloc_chunk', heap_chunk_addr)
@@ -50,7 +49,7 @@ struct foo {
 } foo;
 """)
 
-# pwntools ELF has also been patched to add this
+# pwntools ELF has also been patched to let you use this on symbols
 exe = ELF("./libc.so.6")
 exe.sym_obj['main_arena'].bins[42].fd # correct address of this field
 ```
