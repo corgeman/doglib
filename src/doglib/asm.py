@@ -25,7 +25,7 @@ _ARCHES = {
     "thumb":   ("KS_ARCH_ARM",   "KS_MODE_THUMB",
                 "CS_ARCH_ARM",   "CS_MODE_THUMB"),
     "aarch64": ("KS_ARCH_ARM64", "KS_MODE_LITTLE_ENDIAN",
-                "CS_ARCH_ARM64", "CS_MODE_ARM"),
+                "CS_ARCH_AARCH64", "CS_MODE_ARM"),
     "mips":    ("KS_ARCH_MIPS",  ("KS_MODE_MIPS32", "KS_MODE_BIG_ENDIAN"),
                 "CS_ARCH_MIPS",  ("CS_MODE_MIPS32", "CS_MODE_BIG_ENDIAN")),
     "mipsel":  ("KS_ARCH_MIPS",  ("KS_MODE_MIPS32", "KS_MODE_LITTLE_ENDIAN"),
@@ -61,7 +61,11 @@ def _make_asm(ks_arch, ks_mode):
 def _make_dis(cs_arch, cs_mode):
     def fn(code: bytes, addr: int = 0) -> str:
         import capstone as _cs
-        md = _cs.Cs(getattr(_cs, cs_arch), _mode(_cs, cs_mode))
+        # capstone 6.x renamed CS_ARCH_ARM64 -> CS_ARCH_AARCH64; accept either.
+        arch = getattr(_cs, cs_arch, None)
+        if arch is None and cs_arch == "CS_ARCH_AARCH64":
+            arch = _cs.CS_ARCH_ARM64
+        md = _cs.Cs(arch, _mode(_cs, cs_mode))
         return "\n".join(f"{i.mnemonic} {i.op_str};" for i in md.disasm(code, addr))
     return fn
 
