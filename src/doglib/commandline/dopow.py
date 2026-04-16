@@ -23,6 +23,7 @@ def main(args) -> None:
     from pwnlib.tubes.remote import remote
     from pwnlib.log import getLogger, install_default_handler
     from pwnlib.context import context
+    from pwnlib import term
     from doglib.pow import do_pow
 
     install_default_handler()
@@ -37,6 +38,9 @@ def main(args) -> None:
     except ValueError as e:
         log.critical(f"PoW solving failed: {e}")
         sys.exit(1)
+
+    if sys.stdout.isatty() and not term.term_mode:
+        term.init()
 
     p.interactive()
     print()
