@@ -5,6 +5,9 @@ from pwnlib.rop.srop import SigreturnFrame
 from pwnlib.util.packing import p64, p32, p16, flat
 from .io_file import IO_FILE_plus_struct
 from pwnlib.util.fiddling import rol as _rol, ror as _ror
+from pwnlib.log import getLogger
+
+log = getLogger(__name__)
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -32,7 +35,7 @@ def mangle_kpt(enc,known):
 
 def fake_exit_function(funcs: list[tuple[int,int]], key: int):
 	if len(funcs) > 32:
-		warn("Function count is greater than expected limit")
+		log.warn("Function count is greater than expected limit")
 	exit_func = flat( 
 		0, # ptr to next exit_function_list
 		len(funcs) # length of this list
@@ -50,7 +53,7 @@ def fake_exit_function(funcs: list[tuple[int,int]], key: int):
 
 def setcontext(regs, addr):
     if (not regs.get('rsp')) and addr:
-        warn("rsp not set! this will crash")
+        log.warn("rsp not set! this will crash")
     frame = SigreturnFrame()
     for reg, val in regs.items():
         setattr(frame, reg, val)
@@ -162,7 +165,7 @@ def find_libc_leak(memory_dump, target_addr, aligned=False, is_32bit=False):
     ptr_sz = 4 if is_32bit else 8
     
     if len(memory_dump) < ptr_sz:
-        error(f"Memory dump is too small to contain a {ptr_sz * 8}-bit pointer.")
+        log.error(f"Memory dump is too small to contain a {ptr_sz * 8}-bit pointer.")
         return None
 
     lower_12 = target_addr & 0xfff
@@ -176,7 +179,7 @@ def find_libc_leak(memory_dump, target_addr, aligned=False, is_32bit=False):
             matches.append((i, ptr))
             
     if not matches:
-        error("No pointers matching the lower 12 bits were found in the dump.")
+        log.error("No pointers matching the lower 12 bits were found in the dump.")
         return None
     
     # Get unique pointers to gracefully handle duplicates of the same leak
@@ -194,17 +197,17 @@ def find_libc_leak(memory_dump, target_addr, aligned=False, is_32bit=False):
             heuristic_matches.append((offset, ptr))
             
     if not heuristic_matches:
-        warn("No matches survived the heuristic filter. Might be wrong.")
+        log.warn("No matches survived the heuristic filter. Might be wrong.")
         return matches[0][1]
         
     unique_heuristic_ptrs = list(set(ptr for offset, ptr in heuristic_matches))
     if len(unique_heuristic_ptrs) == 1:
         return unique_heuristic_ptrs[0]
         
-    warn(f"Multiple distinct candidates found, returning first. All found:")
+    log.warn(f"Multiple distinct candidates found, returning first. All found:")
     for ptr in unique_heuristic_ptrs:
         offsets = [off for off, p in heuristic_matches if p == ptr]
-        info(f"Candidate {hex(ptr)} found at offsets: {offsets[:3]}{'...' if len(offsets) > 3 else ''}")
+        log.info(f"Candidate {hex(ptr)} found at offsets: {offsets[:3]}{'...' if len(offsets) > 3 else ''}")
         
     return heuristic_matches[0][1]
 
