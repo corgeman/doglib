@@ -76,7 +76,7 @@ def recvpointer(self):
     buf = b""
     while True:
         c = self.recv(1, timeout=0.3)
-        if c not in b"0123456789abcdefABCDEF":
+        if not c or c not in b"0123456789abcdefABCDEF":
             if c:
                 self.unrecv(c)
             break
