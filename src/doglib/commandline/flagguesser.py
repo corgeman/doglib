@@ -26,6 +26,11 @@ def register(subparsers) -> None:
         help="Output model path (gzip-compressed JSON). Default: model.json.gz",
     )
     t.add_argument("--order", type=int, default=5, help="N-gram order (default: 5).")
+    t.add_argument(
+        "--generic",
+        action="store_true",
+        help="Train on raw lines without stripping the flag prefix before '{'.",
+    )
     t.set_defaults(func=_train)
 
     # --- guess ---
@@ -60,9 +65,10 @@ def _train(args) -> None:
             line = raw.rstrip(b"\r\n")
             if not line:
                 continue
-            brace = line.find(b"{")
-            if brace != -1:
-                line = line[brace + 1:]
+            if not args.generic:
+                brace = line.find(b"{")
+                if brace != -1:
+                    line = line[brace + 1:]
             flags.append(line)
 
     if not flags:
