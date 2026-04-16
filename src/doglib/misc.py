@@ -9,11 +9,12 @@ from pwnlib.log import getLogger
 
 log = getLogger(__name__)
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from pwnlib.elf.elf import ELF
+    from pwnlib.tubes.tube import tube
 
-def proc_maps_parser(data):
+def proc_maps_parser(data: str) -> dict[str, int]:
     """
     Read /proc/self/maps, return a clean mapping.
     """
@@ -24,16 +25,16 @@ def proc_maps_parser(data):
             mappings[file] = int(addr.split("-")[0],16)
     return mappings
 
-def mangle(ptr,key):
+def mangle(ptr: int, key: int) -> int:
     return _rol(ptr^key, 0x11)
 
-def demangle(ptr,key):
+def demangle(ptr: int, key: int) -> int:
     return _ror(ptr, 0x11)^key
 
-def mangle_kpt(enc,known):
+def mangle_kpt(enc: int, known: int) -> int:
     return demangle(enc,known)
 
-def fake_exit_function(funcs: list[tuple[int,int]], key: int):
+def fake_exit_function(funcs: list[tuple[int,int]], key: int) -> bytes:
 	if len(funcs) > 32:
 		log.warn("Function count is greater than expected limit")
 	exit_func = flat( 
@@ -51,7 +52,7 @@ def fake_exit_function(funcs: list[tuple[int,int]], key: int):
 		
 	return exit_func
 
-def setcontext(regs, addr):
+def setcontext(regs: dict[str, int], addr: int) -> bytes:
     if (not regs.get('rsp')) and addr:
         log.warn("rsp not set! this will crash")
     frame = SigreturnFrame()
@@ -81,7 +82,7 @@ def setcontext(regs, addr):
     })
 
 
-def setcontext32(libc: 'ELF', **kwargs) -> (int, bytes):
+def setcontext32(libc: 'ELF', **kwargs: int) -> tuple[int, bytes]:
     got = libc.address + libc.dynamic_value_by_tag("DT_PLTGOT")
     plt_trampoline = libc.address + libc.get_section_by_name(".plt").header.sh_addr
     return got, flat(
@@ -100,7 +101,7 @@ def setcontext32(libc: 'ELF', **kwargs) -> (int, bytes):
 # for stderr, only important thing we corrupt is stdout, not a problem 
 #      (because when it is, attack stdout instead)
 # for stdout, we corrupt stdin/stderr/stdout pointers, which we fix by spraying &stdout 
-def house_of_context(libc,file='stdout',**kwargs) -> (int, bytes):
+def house_of_context(libc: 'ELF', file: str = 'stdout', **kwargs: int) -> tuple[int, bytes]:
     assert _context.bits == 64, "only support amd64!"
     assert file in ['stdout', 'stderr'], "only support stdout/stderr"
 
@@ -147,7 +148,7 @@ def house_of_context(libc,file='stdout',**kwargs) -> (int, bytes):
         bytes(frame) # setcontext payload
     )
 
-def find_libc_leak(memory_dump, target_addr, aligned=False, is_32bit=False):
+def find_libc_leak(memory_dump: bytes, target_addr: int, aligned: bool = False, is_32bit: bool = False) -> int | None:
     """
     given a large dump of memory, `memory_dump`,
     scan it for the lower 12 bits of `target_addr` (since aslr does not affect it),
@@ -211,7 +212,7 @@ def find_libc_leak(memory_dump, target_addr, aligned=False, is_32bit=False):
         
     return heuristic_matches[0][1]
 
-def rerun(p):
+def rerun(p: 'tube') -> Any:
     """
     solve script bruteforcer. add this to your solve script:
     ```python
