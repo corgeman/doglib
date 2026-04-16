@@ -131,21 +131,12 @@ def onegadgets(self, level=100):
     return offsets
 
 
-# ---- orc on elf -------------------------------------------------------
-@patch(ELF)
-@cached_property
-def o(self):
-    return self.orc
+# orc patches to elf
 
 @patch(ELF)
 @cached_property
 def sym_obj(self):
     return _CVarAccessor(self)
-
-@patch(ELF)
-@property
-def symo(self):
-    return self.sym_obj
 
 @patch(ELF)
 def resolve_field(self, symbol_name, field_path=None, struct_name=None):
@@ -185,3 +176,7 @@ def resolve_field(self, symbol_name, field_path=None, struct_name=None):
         log.error(str(e))
 
     return (base_addr + offset) & va_mask(orc.bits)
+
+# shorthands
+ELF.o = ELF.orc
+ELF.symo = ELF.sym_obj
