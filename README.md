@@ -5,6 +5,8 @@ from dog import *
 # start cooking
 ```
 
+documentation at [https://corgi.rip/doglib/](https://corgi.rip/doglib/)
+
 ## install
 ```bash
 # install directly
