@@ -64,10 +64,10 @@ def rand() -> int:
 class GlibcRandCrack:
     _FULL_MASK = 0x7fffffff
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._constraints = []  # list of (value, mask) per rand() position
 
-    def submit(self, observation):
+    def submit(self, observation: int | str | list | tuple | None) -> None:
         if isinstance(observation, (list, tuple)):
             for item in observation:
                 self.submit(item)
@@ -121,7 +121,7 @@ class GlibcRandCrack:
                 cur_len = 0
         return best_start, best_len
 
-    def predict(self):
+    def predict(self) -> GlibcRand:
         """return a GlibcRand positioned after the last submitted output.
         uses pure-python state recovery if 96+ consecutive full outputs exist
         (need ~3 full buffer cycles to uniquely resolve carry bits),
@@ -366,7 +366,7 @@ class GlibcRandCrack:
             return (value, mask)
         raise TypeError(f"expected int, str, or None for known, got {type(known).__name__}")
 
-    def get_seed(self, known=None):
+    def get_seed(self, known: int | str | None = None) -> int:
         """recover the original srand() seed.
         uses O(1) analytical recovery if 96+ consecutive full outputs exist,
         otherwise brute-forces the seed space via the Rust backend.
@@ -406,7 +406,7 @@ class GlibcRandCrack:
             raise RuntimeError("no seed found matching constraints")
         return result
 
-    def get_seeds(self, known=None):
+    def get_seeds(self, known: int | str | None = None) -> list[int]:
         """find ALL seeds matching the submitted constraints.
         always uses brute-force (no analytical shortcut) to ensure completeness.
 
