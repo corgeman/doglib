@@ -4,6 +4,8 @@
 
 *  an incredibly fast solver likely implemended in rust or cuda
 *  a slow but pure-python solver to be used as a fallback
+
+
 we currently support the following proof-of-works:
 
 *  [`kctf`](github.com/google/kctf/blob/v1/docker-images/challenge/pow.py)

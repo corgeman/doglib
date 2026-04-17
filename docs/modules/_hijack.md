@@ -5,7 +5,7 @@ the `_hijack` module extends some common pwntools features (like `tube` or `ELF`
 
 ## `ELF` patches
 
-### `ELF.onegadgets(level=100)`
+### `#!python ELF.onegadgets(self, level: int = 100) -> list[int]`
 calls the [one_gadget](https://github.com/david942j/one_gadget) tool on the ELF, returns every onegadget at level `level`, taking into account `ELF.address` if set.
 ```python
 >>> from dog import *
@@ -21,7 +21,7 @@ calls the [one_gadget](https://github.com/david942j/one_gadget) tool on the ELF,
 >>>
 ```
 
-### `ELF.gadget(asm)`
+### `#!python ELF.gadget(self, asm: str) -> int`
 scans all executable sections for the assembly snippet `asm`, returns offset if found
 ```python
 >>> from dog import *
@@ -30,13 +30,13 @@ scans all executable sections for the assembly snippet `asm`, returns offset if 
 1111947
 ```
 
-### `ELF.binsh`
+### `#!python @property ELF.binsh(self) -> int`
 shorthand for `next(self.search(b"/bin/sh\0"))`, just find the binsh string and return its address.
 
-### `ELF.orc`
+### `#!python @property ELF.orc(self) -> ORC`
 return the ELF as an instance of `ORC`
 
-### `ELF.sym_obj`
+### `#!python @property ELF.sym_obj(self) -> _CVarAccessor`
 like `ELF.sym`, but return the symbol as a `DWARFAddress` so you can get the address of values within the struct:
 ```python
 >>> from dog import *
@@ -51,7 +51,7 @@ like `ELF.sym`, but return the symbol as a `DWARFAddress` so you can get the add
 2114352
 ```
 
-### `ELF.resolve_field`
+### `#!python ELF.resolve_field(self, symbol_name: str, field_path: str | None = None, struct_name: str | None = None) -> int | None`
 same as `sym_obj`, but you write the field access syntax as a string
 ```python
 >>> from dog import *
@@ -67,7 +67,7 @@ same as `sym_obj`, but you write the field access syntax as a string
 
 ## `tube` patches
 
-### `tube.recvpointer()`
+### `#!python tube.recvpointer(self) -> int`
 find and return the value of the first `%p`-style integer printed
 ```python
 >>> from dog import *
