@@ -9,16 +9,12 @@ from doglib.libc import download_libc_by_version
 
 TEST_DIR = os.path.dirname(__file__)
 
-# Version used by the patched-libc fixture.  Any Ubuntu 2.39 build works for
-# the version-string test; the exact patchlevel is pinned so the expected
-# build-ID constant below stays correct.
-_PINNED_VERSION = "2.39-0ubuntu8.5"
-_PINNED_ARCH    = "amd64"
+_PINNED_VERSION  = "2.39-0ubuntu8.5"
+_PINNED_ARCH     = "amd64"
 _PINNED_BUILD_ID = "282c2c16e7b6600b0b22ea0c99010d2795752b5f"
 
 
 def _get_test_libc() -> str | None:
-    """Return a path to the pinned libc, downloading it if necessary."""
     return download_libc_by_version(_PINNED_VERSION, "ubuntu", _PINNED_ARCH)
 
 

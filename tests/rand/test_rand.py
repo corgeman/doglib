@@ -251,7 +251,7 @@ class TestGlibcRandCrackSeedKnown:
         rc = GlibcRandCrack()
         rc.submit([g.rand() for _ in range(3)])
         # top 4 bits of 0xDEADBEEF = 0xD = 1101
-        assert rc.get_seed(known='1101') == seed
+        assert rc.get_seed(known=bin(0xdead)[2:]) == seed
 
     def test_known_full_seed(self):
         """passing the full seed as known should work instantly"""
@@ -276,12 +276,12 @@ class TestGlibcRandCrackSeedAll:
 
     def test_get_seeds_unique(self):
         """with 3 full outputs, should find exactly one seed"""
-        seed = 42
+        seed = 0x421337
         g = GlibcRand(seed)
         rc = GlibcRandCrack()
         rc.submit([g.rand() for _ in range(3)])
-        seeds = rc.get_seeds()
-        assert seeds == [42]
+        seeds = rc.get_seeds(known=0x1337)
+        assert seeds == [0x421337]
 
     def test_get_seeds_multiple_with_partial(self):
         """with very few partial bits, multiple seeds may match"""

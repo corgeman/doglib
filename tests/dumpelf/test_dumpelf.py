@@ -335,8 +335,8 @@ class TestLibcIdentification:
 
     def test_version_string_from_file(self):
         """Unit test: find_version_string on a real libc."""
-        from conftest import _get_test_libc
-        libc_path = _get_test_libc()
+        from doglib.libc import download_libc_by_version
+        libc_path = download_libc_by_version("2.39-0ubuntu8.5", "ubuntu", "amd64")
         if libc_path is None:
             # Fall back to the system libc which is always present
             libc_path = "/lib/x86_64-linux-gnu/libc.so.6"
