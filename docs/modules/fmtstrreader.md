@@ -1,4 +1,8 @@
 # format string arbitrary read
+
+TODO TODO
+
+
 this library contains the ability to make format string payloads for reading arbitrary data  
 at its core, it works as follows:
 ```python
@@ -47,3 +51,13 @@ here are some useful things you can set on `FmtStrReader`
 - `padlen`: like pwntools format string, the amount of bytes prepended to your input (if any)
 - `delimiter`, `start_sentinel`, `end_sentinel`: the unique strings that should be used to delimit the payload. you can make these shorter to make the overall payload shorter (at the risk of things breaking, if one of them accidentally shows up in the leaked data)
 - `warn`: send warning messages if bad things happen (ex. unable to determine the data at a specific address). defaults to true.
+
+# API
+
+## `#!python FmtStrReader(offset: int, padlen: int = 0, badchars: bytes = b"\n", delimiter: bytes = b"FMTLKDLM", start_sentinel: bytes = b"FMTLKSTART", end_sentinel: bytes = b"FMTLKEND", warn: bool = True)`
+
+TODO
+
+## `#!python single_arb_write(off_1: int, off_2: int, off_3: int, where: int, what: bytes, stack_leak: int) -> Iterator[bytes]`
+
+TODO

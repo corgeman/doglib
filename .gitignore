@@ -28,6 +28,10 @@ TODO.md
 memory/
 .coverage
 *.dwz
+# FOR NOW
+.github/
+site/
+gen_docs.sh
 
 # Downloaded test fixtures (ddeb cache, etc.)
 tests/_cache/

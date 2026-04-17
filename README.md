@@ -65,7 +65,7 @@ j[1][1] # 0x21
 j[2] = [3,4,5]
 bytes(j) # b'\x18\x00\x00\x00\x18\x00\x00\x00.....'
 ```
-little more at [docs/orc.md](docs/orc.md)
+little more at `OFFICAL DOCUMENTATION WIP`
 
 
 ## dumpelf
@@ -82,7 +82,7 @@ d = DumpELF(leak, leaked_ptr)
 d.dump("./target_dump.elf")  # write reconstructed binary. itll run! maybe.
 libc = d.libc # (attempt) getting libc, slightly better than dynelf
 ```
-writeup using this on a real ctf challenge at [dumpelf_writeup.md](docs/dumpelf_writeup.md)
+writeup using this on a real ctf challenge at [dumpelf_writeup.md](docs/dumpelf_writeup.md)  
 *warning*: very very hacky barely works on x64/x86. use as a last resort!
 
 ## misc
@@ -124,8 +124,8 @@ given libc/ld, search debian/ubuntu repos for the other, optionally unstrip with
 this checks a few spots pwninit doesn't  
 ### `dog dopow`
 connect to server, attempt to autosolve pow, drop to interactive mode
-## `dog guesser`
-tools for `flagguesser` module. `train` lets you train your own model, and `guess` lets you use it via cli
+### `dog guesser`
+tools for the `flagguesser` module. `train` lets you train your own model, and `guess` lets you use it via cli
 
 ## log
 various stuff to assist in logging/debugging
@@ -150,7 +150,7 @@ p.rl # readline
 p.sla # sendlineafter
 # new features 
 p.readlineint() # int(p.readline(),0)
-exe.gadget['pop rdi; ret'] # (&gadget_address)
+exe.gadget('pop rdi; ret') # (&gadget_address)
 exe.binsh # (&binsh_address)
 ```
 

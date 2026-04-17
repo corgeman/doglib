@@ -12,9 +12,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = [
-    "pytest>=8",
-]
 rust = [
     "doglib-rs @ {root:uri}/src/doglib_rs",
 ]
@@ -37,3 +34,9 @@ packages = ["src/doglib", "src/dog"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "zensical>=0.0.33",
+]

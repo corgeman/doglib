@@ -1,0 +1,23 @@
+.md-typeset .admonition.defn,
+.md-typeset details.defn {
+    border-color: #4e8ef7;
+}
+
+.md-typeset .defn > .admonition-title,
+.md-typeset .defn > summary {
+    background-color: rgba(78, 142, 247, 0.1);
+    font-size: .85rem;
+    font-weight: normal;
+}
+
+.md-typeset :is(h2, h3, h4):has(> code) {
+    border-left: .2rem solid #4e8ef7;
+    padding-left: .6rem;
+    padding-top: .1em;
+    padding-bottom: .1em;
+}
+
+.md-typeset .defn > .admonition-title::before,
+.md-typeset .defn > summary::before {
+    background-color: #4e8ef7;
+}

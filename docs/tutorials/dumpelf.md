@@ -1,4 +1,4 @@
-# intro
+# DumpELF
 As a walkthrough, I will be showing how to use DumpELF on a real CTF challenge.  
 The one I'll pick is [printful](https://github.com/cscosu/buckeyectf-2025-public/blob/master/pwn/printful/README.md), a pwn challenge from BuckeyeCTF 2025 with a very simple description:
 ```
