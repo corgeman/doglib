@@ -14,10 +14,93 @@ corgo@dog-computer:/tmp/test$ dog fetch ./libc.so.6 --dbg
 corgo@dog-computer:/tmp/test$ ls
 ld-2.39.so  libc.so.6
 corgo@dog-computer:/tmp/test$
+
+
 ```
 Both `libc.so.6` and the newly-created `ld-2.39.so` will contain full debug information that you can use as you please.
-## Unstripping other libraries !!!WORKONME!!!<><HIHIHIIH>
-If you need to strip a common library that's not libc/ld, you should try looking it up against some common debuginfod servers.
+## Unstripping other libraries
+If you need to strip a common library that's not libc/ld, you should try seeing if you can find debug symbols on some [debuginfod servers](https://wiki.archlinux.org/title/Debuginfod). here's a script to do that:
+```bash
+#!/bin/bash
+set -e
+
+FORCE=false
+FILE=""
+
+while [[ "$#" -gt 0 ]]; do
+    case $1 in
+        --force|-f) FORCE=true; shift ;;
+        -*) echo "[-] Unknown parameter: $1"; exit 1 ;;
+        *) FILE="$1"; shift ;;
+    esac
+done
+
+if [ -z "$FILE" ]; then
+    echo "Usage: $0 [--force] <library_file>"
+    exit 1
+fi
+
+if [ ! -f "$FILE" ]; then
+    echo "[-] Error: File '$FILE' not found."
+    exit 1
+fi
+
+if ! file "$FILE" | grep -q "ELF"; then
+    echo "[-] Error: '$FILE' does not appear to be a valid ELF file."
+    exit 1
+fi
+
+if [ "$FORCE" = false ] && readelf -S "$FILE" 2>/dev/null | grep -q '\.debug_info'; then
+    echo "[+] '$FILE' already has debug symbols. Skipping. (use --force to override)"
+    exit 0
+fi
+
+BUILD_ID=$(readelf -n "$FILE" 2>/dev/null | grep "Build ID:" | awk '{print $3}')
+
+if [ -z "$BUILD_ID" ]; then
+    echo "[-] Error: Could not find a Build ID for '$FILE'."
+    exit 1
+fi
+
+echo "[+] Found Build ID: $BUILD_ID"
+
+PLUMB_SERVERS="https://debuginfod.pwndbg.re/ https://debuginfod.ubuntu.com/ https://debuginfod.debian.net/ https://debuginfod.elfutils.org/"
+export DEBUGINFOD_URLS="$PLUMB_SERVERS ${DEBUGINFOD_URLS:-}"
+
+# Only clear negative cache entries (0-byte debuginfo files), not valid cached results
+CACHE_DIR="$HOME/.cache/debuginfod_client/$BUILD_ID"
+if [ -d "$CACHE_DIR" ]; then
+    CACHED_DEBUGINFO="$CACHE_DIR/debuginfo"
+    if [ -f "$CACHED_DEBUGINFO" ] && [ ! -s "$CACHED_DEBUGINFO" ]; then
+        echo "[*] Clearing negative debuginfod cache for $BUILD_ID..."
+        rm -f "$CACHED_DEBUGINFO"
+    fi
+fi
+
+echo "[*] Fetching debuginfo..."
+DEBUG_FILE=$(debuginfod-find debuginfo "$BUILD_ID" 2>/dev/null) || true
+
+if [ -z "$DEBUG_FILE" ] || [ ! -f "$DEBUG_FILE" ]; then
+    echo "[-] No debuginfo found for $BUILD_ID on any configured server."
+    exit 1
+fi
+
+echo "[+] Debuginfo found/downloaded to: $DEBUG_FILE"
+echo "[*] Applying debug info using eu-unstrip..."
+
+TMPOUT=$(mktemp "${FILE}.unstrip.XXXXXX")
+if eu-unstrip -o "$TMPOUT" "$FILE" "$DEBUG_FILE"; then
+    mv "$TMPOUT" "$FILE"
+    echo "[+] Successfully applied debug symbols to '$FILE'."
+        chmod +x "$FILE"
+    exit 0
+else
+    rm -f "$TMPOUT"
+    echo "[-] Error: eu-unstrip failed."
+    exit 1
+fi
+```
+
 ## C64/C32/C
 If the types you're looking for are commonly used in CTFs, this module may have them inside `C64`/`C32`/`C`.
 ```python
@@ -42,6 +125,7 @@ struct malloc_state (2200 bytes):
 ```
 If you'd like to add a useful type, feel free to make a [PR](https://github.com/corgeman/doglib/blob/main/src/doglib/data/orc/ctypes_builtin.h)!  
 Note that your type cannot have gone under significant change-- for instance, you should not PR the `tcache_perthread_struct` because [it was significantly changed in version 2.42](https://github.com/pwndbg/pwndbg/issues/3454).
+
 
 ## Debuginfo via header files
 If none of these apply, you'll have to create the necessary struct definitions yourself.  

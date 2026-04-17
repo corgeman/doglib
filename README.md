@@ -169,9 +169,9 @@ exe = ELF("./blah.bin") # say this has a fmtstr vuln
 p = process([exe.path])
 
 x = FmtStrReader(6,badchars=b'\n') # payload shows up at index 6, we can't use b'\n'
-pl = x.payload(exe.address,8) # i want to read a guaranteed 8 bytes at 'addr'
+pl = x.payload(exe.address, 12) # i want to read a guaranteed 12 bytes at 'addr'
 p.sendline(pl)
-print(x.parse(p.recv())) # b'\x7fELF\x02\x01\x01\x00'
+print(x.parse(p.recv())) # b'\x7fELF\x02\x01\x01\x00\x00\x00\x00\x00'
 ```
 
 ## asm

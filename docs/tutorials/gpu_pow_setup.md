@@ -13,29 +13,18 @@ to install this you'll need:
 * rust and maturin (`pip install maturin` or `apt install python3-maturin`)
 
 ## building
-you can build and install the library with:
+you can enable cuda support by reinstalling `doglib_rs` with:
 ```sh
-cd src/doglib_rs
-maturin build --release --features cuda # it will spit out 'built wheel to <BLAH>'
-pip install /path/to/built/wheel/file.whl
+# local
+pip install src/doglib_rs --config-settings=build-args="--features cuda"
+# remote
+pip install "git+https://github.com/corgeman/doglib.git#subdirectory=src/doglib_rs" --config-settings=build-args="--features cuda"
 ```
 
 ### warning: small wsl2 bug
-if you get a warning about `nvcc` being unable to find your drivers, this is a wsl bug. you should either:
+if you get a warning about `nvcc` being unable to find your drivers, this is a wsl bug. you should add this to your `.bashrc`:
 ```bash
 export LD_LIBRARY_PATH="/usr/lib/wsl/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-```
-or
-```bash
-cd /usr/lib/wsl/lib
-# backup
-sudo mv libcuda.so.1 libcuda.so.1.backup
-sudo mv libcuda.so libcuda.so.backup
-# create symlink manually
-sudo ln -s libcuda.so.1.1 libcuda.so.1
-sudo ln -s libcuda.so.1 libcuda.so
-# update cache
-sudo ldconfig
 ```
 (as per [this](https://github.com/microsoft/WSL/issues/8587#issuecomment-1229170859))
 
