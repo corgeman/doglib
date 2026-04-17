@@ -1,4 +1,5 @@
 # very todo
+from typing import Iterator
 from pwnlib.util.packing import p8, p16, p32, p64
 
 def write_data(data, *args, **kwargs):
@@ -42,7 +43,7 @@ but once we have this we can split the stackless_arb_write into a set of single 
 also probably make something for pure stack writes since that's shorter and simpler
 this is for arb write
 """
-def single_arb_write(off_1, off_2, off_3, where, what, stack_leak):
+def single_arb_write(off_1: int, off_2: int, off_3: int, where: int, what: bytes, stack_leak: int) -> Iterator[bytes]:
     slbits = stack_leak & 0xff
     # build up the pointer
     for n in range(4):

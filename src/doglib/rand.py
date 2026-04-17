@@ -55,10 +55,10 @@ class GlibcRand:
 
 _global = GlibcRand(1)
 
-def srand(seed):
+def srand(seed: int) -> None:
     _global.srand(seed)
 
-def rand():
+def rand() -> int:
     return _global.rand()
 
 class GlibcRandCrack:
@@ -437,7 +437,7 @@ class GlibcRandCrack:
 
 # helper functions to correctly format truncated rand() outputs as bit constraints
 
-def rand_mod(value, n):
+def rand_mod(value: int, n: int) -> str:
     """Format a rand() % n observation as a bit constraint string.
     For non-power-of-2 n, only bits from the 2-adic factor are pinned;
     for purely odd n this returns all unknowns."""
@@ -446,11 +446,11 @@ def rand_mod(value, n):
         return '?' * 31
     return '?' * (31 - a) + bin(value & ((1 << a) - 1))[2:].zfill(a)
 
-def rand_rshift(value, k):
+def rand_rshift(value: int, k: int) -> str:
     """Format a rand() >> k observation as a bit constraint string."""
     return bin(value)[2:].zfill(31 - k) + '?' * k
 
-def rand_and(value, mask):
+def rand_and(value: int, mask: int) -> str:
     """Format a rand() & mask observation as a bit constraint string.
     Only bits where mask=1 are known; AND-zeroed bits reveal nothing."""
     s = ''
@@ -461,7 +461,7 @@ def rand_and(value, mask):
             s += '?'
     return s
 
-def rand_divide(value, n):
+def rand_divide(value: int, n: int) -> str:
     """Format a rand() // n observation as a bit constraint string."""
     min_val = value * n
     if min_val >= (1 << 31):

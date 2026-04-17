@@ -10,7 +10,7 @@ from pwnlib.util.packing import p64
 # we should also have a 'retspam' argument that pads the start of the chain with ret gadgets
 # so if you have a generic overflow but don't know where the return address exactly is you're still fine
 # kinda like a nop sled
-def quickrop(progs,ret=False,badchars=b""):
+def quickrop(progs: 'list | ELF', ret: bool = False, badchars: bytes = b"") -> bytes:
     r = ROP(progs,badchars=badchars)
     binsh = None
     

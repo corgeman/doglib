@@ -442,7 +442,7 @@ def payload_replace(payload: str or bytes, rpdict:dict=None, filler="\x00"):
     return bytes(output)
 
 # fast house of apple2, just pass libc and done
-def hoa2(libc: 'ELF', file='stdout'):
+def hoa2(libc: 'ELF', file: str = 'stdout') -> bytes:
     fp = IO_FILE_plus_struct()
     return fp.house_of_apple2_execmd_when_do_IO_operation(
 	libc.sym[f'_IO_2_1_{file}_'],

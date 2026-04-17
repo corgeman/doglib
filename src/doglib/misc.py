@@ -148,7 +148,7 @@ def house_of_context(libc: 'ELF', file: str = 'stdout', **kwargs: int) -> tuple[
         bytes(frame) # setcontext payload
     )
 
-def find_libc_leak(memory_dump: bytes, target_addr: int, aligned: bool = False, is_32bit: bool = False) -> int | None:
+def find_libc_leak(memory_dump: bytes, addr: int, aligned: bool = False, bits: int = 64) -> int | None:
     """
     given a large dump of memory, `memory_dump`,
     scan it for the lower 12 bits of `target_addr` (since aslr does not affect it),
@@ -163,13 +163,15 @@ def find_libc_leak(memory_dump: bytes, target_addr: int, aligned: bool = False, 
     leak = find_libc_leak(dump, libc.sym["_IO_2_1_stdin_"])
     libc.address = leak - libc.sym["_IO_2_1_stdout_"]
     """
-    ptr_sz = 4 if is_32bit else 8
+    assert bits in [32, 64], "only support 32-bit and 64-bit"
+
+    ptr_sz = 4 if bits == 32 else 8
     
     if len(memory_dump) < ptr_sz:
         log.error(f"Memory dump is too small to contain a {ptr_sz * 8}-bit pointer.")
         return None
 
-    lower_12 = target_addr & 0xfff
+    lower_12 = addr & 0xfff
     step = ptr_sz if aligned else 1
     matches = []
     
@@ -189,8 +191,8 @@ def find_libc_leak(memory_dump: bytes, target_addr: int, aligned: bool = False, 
         return unique_ptrs[0]
         
     # Apply heuristics for multiple distinct candidates
-    va_min = 0x40000000 if is_32bit else 0x700000000000
-    va_max = 0xffffffff if is_32bit else 0x7fffffffffff
+    va_min = 0x40000000 if bits == 32 else 0x700000000000
+    va_max = 0xffffffff if bits == 32 else 0x7fffffffffff
     
     heuristic_matches = []
     for offset, ptr in matches:

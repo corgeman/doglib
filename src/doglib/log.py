@@ -7,7 +7,7 @@ import linecache
 from pwnlib.log import getLogger
 log = getLogger("pwnlib.exploit")
 
-def logx(*args, **kwargs):
+def logx(*args, **kwargs) -> None:
     """
     Log expressions and values while preserving the caller-side expression text.
 
@@ -90,7 +90,7 @@ def logx(*args, **kwargs):
         log.info("%s=%s" % (name, _encode(arg)))
 
 
-def log_printf(leaks: list | tuple, start_offset=1):
+def log_printf(leaks: list | tuple, start_offset: int = 1) -> None:
     """
     Convenience function for printf-related challenges when you want a neat list of positional offsets and values
 

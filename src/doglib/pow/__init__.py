@@ -84,7 +84,7 @@ _DETECTORS = [
 ]
 
 
-def detect_and_solve(data):
+def detect_and_solve(data: bytes | str) -> bytes | None:
     """Auto-detect PoW type from server output and solve it.
 
     Args:
@@ -103,7 +103,7 @@ def detect_and_solve(data):
     return None
 
 
-def do_pow(p: 'pwnlib.tubes.tube'):
+def do_pow(p: 'pwnlib.tubes.tube.tube') -> 'pwnlib.tubes.tube.tube':
     """Auto-detect and solve a PoW from a pwntools tube.
 
     Polls data from the tube incrementally, checking for a known PoW

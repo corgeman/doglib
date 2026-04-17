@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from typing import Iterator, Tuple, Union
 
-def protect_ptr(address, next) -> int:
+def protect_ptr(address: int, next: int) -> int:
     return (address >> 12) ^ next
     
     
-def reveal_ptr(addr) -> int:
+def reveal_ptr(addr: int) -> int:
     _res = addr
     for _ in range(3):
         _res = (_res >> 12) ^ addr
