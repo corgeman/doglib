@@ -37,7 +37,7 @@ class ORC:
     _SRC_MAIN = 0
     _SRC_SUP = 1
 
-    def __init__(self, path, bits=None):
+    def __init__(self, path: str | os.PathLike, bits=None):
         self.path = os.path.abspath(path)
         with open(self.path, 'rb') as f:
             elffile = ELFFile(f)

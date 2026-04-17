@@ -35,43 +35,43 @@ def patch(target_cls, force=False):
 
 # ---- tube -------------------------------------------------------------
 @patch(tube)
-def readlineafter(self, needle):
+def readlineafter(self, needle: bytes) -> bytes:
     self.readuntil(needle)
     return self.readline()
 
 @patch(tube)
-def readuntildrop(self, needle):
+def readuntildrop(self, needle: bytes) -> bytes:
     return self.readuntil(needle, drop=True)
 
 _cdelim = b':'
 
 @patch(tube)
-def sendlinecolon(self, dat):
+def sendlinecolon(self, dat: bytes) -> None:
     self.sendlineafter(_cdelim, dat)
 
 @patch(tube)
-def sendaftercolon(self, dat):
+def sendaftercolon(self, dat: bytes) -> None:
     self.sendafter(_cdelim, dat)
 
 @patch(tube)
-def sendintcolon(self, dat):
+def sendintcolon(self, dat: int) -> None:
     self.sendlineafter(_cdelim, str(dat).encode())
 
 @patch(tube)
-def readlinecolon(self):
+def readlinecolon(self) -> bytes:
     self.readuntil(_cdelim)
     return self.readline()
 
 @patch(tube)
-def readint(self,base=0):
+def readint(self, base: int = 0) -> int:
     return int(self.recv(),base)
 
 @patch(tube)
-def readlineint(self,base=0):
+def readlineint(self, base: int = 0) -> int:
     return int(self.readline(),base)
 
 @patch(tube)
-def recvpointer(self):
+def recvpointer(self) -> int:
     self.readuntil(b"0x")
     buf = b""
     while True:
@@ -102,22 +102,22 @@ tube.rp = tube.recvpointer
 
 # ---- elf -------------------------------------------------------------
 @patch(ELF)
-def gadget(self, asm):
+def gadget(self, asm: str) -> int:
     asm = kasm[self.arch](asm)
     return next(self.search(asm,executable=True))
 
 @patch(ELF)
 @property
-def binsh(self):
+def binsh(self) -> int:
     return next(self.search(b"/bin/sh\0"))
 
 @patch(ELF)
 @cached_property
-def orc(self):
+def orc(self) -> ORC:
     return ORC(self.path)
 
 @patch(ELF)
-def onegadgets(self, level=100):
+def onegadgets(self, level: int = 100) -> list[int]:
     import subprocess, shutil
     if shutil.which('one_gadget') is None:
         raise FileNotFoundError("one_gadget not found in PATH")
@@ -135,11 +135,11 @@ def onegadgets(self, level=100):
 
 @patch(ELF)
 @cached_property
-def sym_obj(self):
+def sym_obj(self) -> _CVarAccessor:
     return _CVarAccessor(self)
 
 @patch(ELF)
-def resolve_field(self, symbol_name, field_path=None, struct_name=None):
+def resolve_field(self, symbol_name: str, field_path: str | None = None, struct_name: str | None = None) -> int | None:
     """
     Dynamically calculates the exact memory address of a field inside a struct/array.
     Supports multi-dimensional array paths like 'matrix[1][2]'.

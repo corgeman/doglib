@@ -23,7 +23,7 @@ class ORCHeader(ORC):
     context.bits when the user has explicitly set context.arch or
     context.bits, otherwise falls back to the host architecture.
     """
-    def __init__(self, header_path, include_dirs=None, bits=None):
+    def __init__(self, header_path: str | os.PathLike, include_dirs=None, bits=None):
         header_path = os.path.abspath(header_path)
         if not os.path.exists(header_path):
             raise FileNotFoundError(f"Header file not found: {header_path}")
