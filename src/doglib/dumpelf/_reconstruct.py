@@ -5,11 +5,9 @@ Takes raw PT_LOAD segment data (as dumped from a remote process) and
 rebuilds a valid ELF file with section headers, fixed GOT, and
 corrected PIE offsets.  Based on the approach from core2ELF64.
 """
-from __future__ import annotations
 
 import ctypes
 import struct
-from typing import Dict, List, Optional, Tuple
 
 from pwnlib.log import getLogger
 
@@ -371,7 +369,7 @@ def _fix_dynamic_for_pie(dyn_data: bytearray, is64: bool, pie_base: int) -> byte
 # ── PLT detection ──────────────────────────────────────────────────
 
 def _find_plt_64(text_data: bytes, text_vaddr: int,
-                 init_vaddr: int, pltgot: int) -> Optional[int]:
+                 init_vaddr: int, pltgot: int) -> int | None:
     """Scan for the PLT[0] stub pattern in x86-64 code.
 
     Pattern: ff 35 XX XX XX XX   push [rip + GOT+8]
@@ -402,7 +400,7 @@ def _find_plt_64(text_data: bytes, text_vaddr: int,
 
 
 def _find_plt_32(text_data: bytes, text_vaddr: int,
-                 init_vaddr: int, pltgot: int) -> Optional[int]:
+                 init_vaddr: int, pltgot: int) -> int | None:
     """Scan for PLT[0] stub in x86-32.
 
     Pattern: ff 35 [GOT+4]  push [GOT+4]
@@ -431,7 +429,7 @@ def _find_plt_32(text_data: bytes, text_vaddr: int,
 # ── Main reconstruction entry point ────────────────────────────────
 
 def reconstruct_elf(
-    segments: Dict[int, bytes],
+    segments: dict[int, bytes],
     base: int,
     elfclass: int,
 ) -> bytes:
@@ -464,7 +462,7 @@ def reconstruct_elf(
     # ── 2. Parse program headers ──
     phdr_offset = ehdr.e_phoff
     phdr_size = ehdr.e_phentsize
-    phdrs: List[_Phdr] = []
+    phdrs: list[_Phdr] = []
     for i in range(ehdr.e_phnum):
         off = phdr_offset + i * phdr_size
         phdrs.append(_Phdr.from_bytes(ehdr_data[off:off + phdr_size], is64))
@@ -495,7 +493,7 @@ def reconstruct_elf(
     pie_base = base if ehdr.is_pie else 0
 
     # ── 4. Collect segment data ──
-    seg_data: Dict[int, bytes] = {}
+    seg_data: dict[int, bytes] = {}
     for i, p in enumerate(phdrs):
         if p.p_type not in (PT_LOAD, PT_DYNAMIC, PT_INTERP, PT_NOTE,
                             PT_TLS, PT_GNU_EH_FRAME, PT_GNU_RELRO, PT_PHDR):
@@ -528,7 +526,7 @@ def reconstruct_elf(
                 output[p.p_offset:p.p_offset + actual_len] = d[:actual_len]
 
     # ── 6. Parse DYNAMIC ──
-    dyn_info: Optional[_DynInfo] = None
+    dyn_info: _DynInfo | None = None
     if dyn_seg_idx != -1 and dyn_seg_idx in seg_data:
         raw_dyn = bytearray(seg_data[dyn_seg_idx])
         dyn_phdr = phdrs[dyn_seg_idx]
@@ -552,7 +550,7 @@ def reconstruct_elf(
                 break
 
     # ── 7. Build section headers ──
-    sections: List[_Shdr] = []
+    sections: list[_Shdr] = []
 
     # NULL section
     sections.append(_Shdr())

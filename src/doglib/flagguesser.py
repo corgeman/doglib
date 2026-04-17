@@ -13,12 +13,10 @@ bundled model so you can start guessing immediately:
 
 # if you're bored feel free to check out ./src/doglib/data/flagguesser/all_scraped_flags.txt.gz
 
-from __future__ import annotations
-
 import gzip
 import json
 from collections import defaultdict
-from typing import Iterable
+from collections.abc import Iterable
 
 # ---------------------------------------------------------------------------
 # NGramModel

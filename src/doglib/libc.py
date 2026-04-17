@@ -4,14 +4,11 @@ Glibc identification and download from Ubuntu/Debian package mirrors.
 Provides version-string scanning, build-ID lookups via libcdb, and
 .deb downloading/extraction for libc, ld, and debug symbols.
 """
-from __future__ import annotations
-
 import io
 import json
 import os
 import tarfile
 import urllib.parse
-from typing import Optional, Tuple
 
 from pwnlib import libcdb
 from pwnlib.context import context
@@ -23,7 +20,7 @@ log = getLogger(__name__)
 
 # ── Version string identifiers (from pwninit) ───────────────────────
 
-_VERSION_IDENTIFIERS: list[Tuple[bytes, str, str]] = [
+_VERSION_IDENTIFIERS: list[tuple[bytes, str, str]] = [
     (b"GNU C Library (Ubuntu GLIBC ", "ubuntu", "libc"),
     (b"GNU C Library (Ubuntu EGLIBC ", "ubuntu", "libc"),
     (b"GNU C Library (Debian GLIBC ", "debian", "libc"),
@@ -32,7 +29,7 @@ _VERSION_IDENTIFIERS: list[Tuple[bytes, str, str]] = [
 ]
 
 
-def find_version_string(data: bytes) -> Optional[Tuple[str, str, str]]:
+def find_version_string(data: bytes) -> tuple[str, str, str] | None:
     """Scan raw bytes for a glibc version string.
 
     Works on both libc and ld binaries — the ld linker embeds a similar
@@ -61,7 +58,7 @@ def find_version_string(data: bytes) -> Optional[Tuple[str, str, str]]:
     return None
 
 
-def download_libc_by_build_id(build_id: str) -> Optional[str]:
+def download_libc_by_build_id(build_id: str) -> str | None:
     """Download a libc from libcdb using a hex-encoded build ID.
 
     Returns:
@@ -133,7 +130,7 @@ def _iter_ar(data: bytes):
         yield name, content
 
 
-def _extract_libc_from_deb(deb_data: bytes, out_dir: str) -> Optional[str]:
+def _extract_libc_from_deb(deb_data: bytes, out_dir: str) -> str | None:
     """Extract ``libc.so.6`` from a ``.deb`` package."""
     tar_name = None
     tar_data = None
@@ -171,7 +168,7 @@ def _extract_libc_from_deb(deb_data: bytes, out_dir: str) -> Optional[str]:
 
 def _extract_named_file_from_deb(
     deb_data: bytes, target_basename: str, out_path: str
-) -> Optional[str]:
+) -> str | None:
     """Extract a single file by basename from a ``.deb``."""
     tar_name = None
     tar_data = None
@@ -205,7 +202,7 @@ def _extract_named_file_from_deb(
     return None
 
 
-def _query_debian_snapshot(deb_name: str, version: str, pkg: str = "libc6") -> Optional[str]:
+def _query_debian_snapshot(deb_name: str, version: str, pkg: str = "libc6") -> str | None:
     """Query snapshot.debian.org for a stable download URL."""
     api_url = _DEBIAN_SNAPSHOT_API.format(
         pkg=urllib.parse.quote(pkg, safe=""),
@@ -225,7 +222,7 @@ def _query_debian_snapshot(deb_name: str, version: str, pkg: str = "libc6") -> O
     return None
 
 
-def _download_deb(deb_name: str, distro: str, version: str, w, pkg: str = "libc6") -> Optional[bytes]:
+def _download_deb(deb_name: str, distro: str, version: str, w, pkg: str = "libc6") -> bytes | None:
     """Download a glibc ``.deb``, trying all appropriate mirrors in order."""
     if distro == "ubuntu":
         url = "%s/%s" % (_UBUNTU_PKG_URL, deb_name)
@@ -254,7 +251,7 @@ def download_libc_by_version(
     version: str,
     distro: str,
     arch: str = "amd64",
-) -> Optional[str]:
+) -> str | None:
     """Download a libc from Ubuntu/Debian package mirrors by version string.
 
     Arguments:
@@ -326,8 +323,8 @@ def fetch_ld_by_version(
     version: str,
     distro: str,
     arch: str = "amd64",
-    out_path: Optional[str] = None,
-) -> Optional[str]:
+    out_path: str | None = None,
+) -> str | None:
     """Download the ld linker matching a given glibc version from package mirrors.
 
     Arguments:
@@ -399,7 +396,7 @@ def _download_debug_deb(
     version: str,
     distro: str,
     arch: str = "amd64",
-) -> Optional[bytes]:
+) -> bytes | None:
     """Download the ``libc6-dbg`` ``.deb`` for the given glibc version."""
     if distro not in ("ubuntu", "debian"):
         log.warning("Unknown distro %r, cannot download libc6-dbg", distro)
@@ -419,10 +416,10 @@ def _download_debug_deb(
 
 def _extract_debug_file(
     deb_data: bytes,
-    build_id: Optional[str],
+    build_id: str | None,
     fallback_basename: str,
     tmp_dir: str,
-) -> Optional[str]:
+) -> str | None:
     """Extract a debug symbols file from a ``libc6-dbg`` deb."""
     candidates: list[str] = []
     if build_id and len(build_id) > 2:
@@ -445,9 +442,9 @@ def fetch_debug_by_version(
     version: str,
     distro: str,
     arch: str = "amd64",
-    build_id: Optional[str] = None,
-    ld_build_id: Optional[str] = None,
-) -> dict[str, Optional[str]]:
+    build_id: str | None = None,
+    ld_build_id: str | None = None,
+) -> dict[str, str | None]:
     """Download debug symbols for glibc from the ``libc6-dbg`` .deb.
 
     Arguments:
@@ -459,7 +456,7 @@ def fetch_debug_by_version(
         ld_build_id: Hex build-ID of the **ld** linker.
 
     Returns:
-        Dict with keys ``"libc"`` and ``"ld"``, each mapping to the
+        dict with keys ``"libc"`` and ``"ld"``, each mapping to the
         extracted debug file path or ``None``.
     """
     import tempfile
@@ -472,7 +469,7 @@ def fetch_debug_by_version(
         return {"libc": None, "ld": None}
 
     tmp_dir = tempfile.mkdtemp(prefix="doglib_dbg_")
-    results: dict[str, Optional[str]] = {"libc": None, "ld": None}
+    results: dict[str, str | None] = {"libc": None, "ld": None}
 
     libc_fallback = "libc-%s.so" % version_short
     libc_dbg = _extract_debug_file(package, build_id, libc_fallback, tmp_dir)

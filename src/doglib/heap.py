@@ -1,6 +1,4 @@
-from __future__ import annotations
-
-from typing import Iterator, Tuple, Union
+from collections.abc import Iterator
 
 def protect_ptr(address: int, next: int) -> int:
     return (address >> 12) ^ next
@@ -58,7 +56,7 @@ class Tcache:
         raise KeyError("invalid key: use a size (>=0x20, multiple of 0x10) or bin index (0..63)")
 
     # --- Mapping protocol ---
-    def __setitem__(self, key: int, value: Union[int, None, Tuple[int, int]]) -> None:
+    def __setitem__(self, key: int, value: int | None | tuple[int, int]) -> None:
         idx = self._key_to_index(key)
         if value is None:
             self._entries[idx] = 0
@@ -84,7 +82,7 @@ class Tcache:
 
         raise TypeError("value must be int, None, or (int pointer, int count)")
 
-    def __getitem__(self, key: int) -> Tuple[int, int]:
+    def __getitem__(self, key: int) -> tuple[int, int]:
         idx = self._key_to_index(key)
         return self._entries[idx], self._counts[idx]
 

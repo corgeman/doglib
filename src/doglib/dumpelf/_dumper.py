@@ -5,10 +5,8 @@ Handles all remote interaction (leak calls), then delegates to
 ``_reconstruct`` for building the final ELF file and ``_libc`` for
 remote library identification.
 """
-from __future__ import annotations
-
 import ctypes
-from typing import Callable, Dict, Optional, Union
+from collections.abc import Callable
 
 from pwnlib import elf as pwnelf
 from pwnlib.context import context
@@ -97,12 +95,12 @@ class DumpELF:
 
     def __init__(
         self,
-        leak: Union[Callable, MemLeak],
+        leak: Callable | MemLeak,
         pointer: int,
-        elf: Optional[ELF] = None,
+        elf: ELF | None = None,
         bulk: bool = False,
     ):
-        self._bulk_leak: Optional[Callable] = None
+        self._bulk_leak: Callable | None = None
 
         if bulk:
             # leak(addr, count) -> bytes; wrap a single-byte version for MemLeak
@@ -116,14 +114,14 @@ class DumpELF:
         self.leak = leak
         self._bulk = bulk
         self._elf = elf
-        self._elfclass: Optional[int] = None
-        self._elftype: Optional[str] = None
-        self._base: Optional[int] = None
-        self._dynamic: Optional[int] = None
-        self._link_map: Optional[int] = None
-        self._bases: Optional[Dict[bytes, int]] = None
-        self._segments: Optional[Dict[int, bytes]] = None
-        self._libc: Optional[ELF] = None
+        self._elfclass: int | None = None
+        self._elftype: str | None = None
+        self._base: int | None = None
+        self._dynamic: int | None = None
+        self._link_map: int | None = None
+        self._bases: dict[bytes, int] | None = None
+        self._segments: dict[int, bytes] | None = None
+        self._libc: ELF | None = None
 
         self._pointer = pointer
 
@@ -164,21 +162,21 @@ class DumpELF:
         return self._base
 
     @property
-    def dynamic(self) -> Optional[int]:
+    def dynamic(self) -> int | None:
         """Address of the DYNAMIC segment."""
         if self._dynamic is None:
             self._dynamic = self._find_dynamic()
         return self._dynamic
 
     @property
-    def link_map(self) -> Optional[int]:
+    def link_map(self) -> int | None:
         """Pointer to the runtime ``link_map`` structure."""
         if self._link_map is None:
             self._link_map = self._find_link_map()
         return self._link_map
 
     @property
-    def bases(self) -> Dict[bytes, int]:
+    def bases(self) -> dict[bytes, int]:
         """Map of library name to base address, via the link map."""
         if self._bases is None:
             self._bases = self._walk_link_map()
@@ -208,7 +206,7 @@ class DumpELF:
                 raise ValueError("Could not find ELF base (address went negative)")
             w.status("%#x" % ptr)
 
-    def _find_base_optimized(self, ptr: int) -> Optional[int]:
+    def _find_base_optimized(self, ptr: int) -> int | None:
         """Use a local ELF copy to skip pages faster."""
         if not self._elf:
             return None
@@ -230,7 +228,7 @@ class DumpELF:
 
     # ── PHDR / DYNAMIC finding ──────────────────────────────────────
 
-    def _find_dynamic(self) -> Optional[int]:
+    def _find_dynamic(self) -> int | None:
         leak = self.leak
         base = self.base
         Ehdr = {32: Elf32_Ehdr, 64: Elf64_Ehdr}[self.elfclass]
@@ -249,7 +247,7 @@ class DumpELF:
         log.warning("Could not find PT_DYNAMIC")
         return None
 
-    def _find_dt(self, tag: int) -> Optional[int]:
+    def _find_dt(self, tag: int) -> int | None:
         """Find an entry in the DYNAMIC array by tag."""
         leak = self.leak
         dynamic = self.dynamic
@@ -266,7 +264,7 @@ class DumpELF:
 
     # ── Link map ────────────────────────────────────────────────────
 
-    def _find_link_map(self) -> Optional[int]:
+    def _find_link_map(self) -> int | None:
         leak = self.leak
         Got = {32: Elf_i386_GOT, 64: Elf_x86_64_GOT}[self.elfclass]
         r_debug = {32: Elf32_r_debug, 64: Elf64_r_debug}[self.elfclass]
@@ -295,13 +293,13 @@ class DumpELF:
         w.success("%#x" % linkmap)
         return linkmap
 
-    def _walk_link_map(self) -> Dict[bytes, int]:
+    def _walk_link_map(self) -> dict[bytes, int]:
         if self.link_map is None:
             return {}
 
         leak = self.leak
         LinkMap = {32: Elf32_Link_Map, 64: Elf64_Link_Map}[self.elfclass]
-        result: Dict[bytes, int] = {}
+        result: dict[bytes, int] = {}
 
         cur = self.link_map
         # Rewind to start
@@ -320,7 +318,7 @@ class DumpELF:
 
     # ── Bulk read helper ────────────────────────────────────────────
 
-    def _bulk_read(self, addr: int, total: int) -> Optional[bytes]:
+    def _bulk_read(self, addr: int, total: int) -> bytes | None:
         """Read *total* bytes starting at *addr* using the bulk leak callable.
 
         Loops when the user's function returns a short read, so the caller
@@ -336,7 +334,7 @@ class DumpELF:
 
     # ── Segment dumping ─────────────────────────────────────────────
 
-    def _dump_segments(self) -> Dict[int, bytes]:
+    def _dump_segments(self) -> dict[int, bytes]:
         """Dump all PT_LOAD segments from the remote binary."""
         leak = self.leak
         base = self.base
@@ -347,7 +345,7 @@ class DumpELF:
         phead = base + leak.field(base, Ehdr.e_phoff)
         phnum = leak.field(base, Ehdr.e_phnum)
 
-        segments: Dict[int, bytes] = {}
+        segments: dict[int, bytes] = {}
         w = log.waitfor("Dumping segments")
 
         for i in range(phnum):
@@ -377,7 +375,7 @@ class DumpELF:
         return segments
 
     @property
-    def segments(self) -> Dict[int, bytes]:
+    def segments(self) -> dict[int, bytes]:
         """Cached dumped segments."""
         if self._segments is None:
             self._segments = self._dump_segments()
@@ -385,7 +383,7 @@ class DumpELF:
 
     # ── Public API ──────────────────────────────────────────────────
 
-    def dump(self, path: Optional[str] = None) -> bytes:
+    def dump(self, path: str | None = None) -> bytes:
         """Dump and reconstruct the remote ELF.
 
         Arguments:
@@ -403,7 +401,7 @@ class DumpELF:
 
         return elf_bytes
 
-    def dump_lib(self, name: Union[str, bytes], path: Optional[str] = None) -> bytes:
+    def dump_lib(self, name: str | bytes, path: str | None = None) -> bytes:
         """Dump a loaded library by (substring) name.
 
         Arguments:
@@ -426,7 +424,7 @@ class DumpELF:
         raise ValueError(f"library matching {name!r} not found in link map")
 
     @property
-    def libc(self) -> Optional[ELF]:
+    def libc(self) -> ELF | None:
         """Identify the remote libc, download it, and return an ELF object.
 
         Tries build-ID extraction first, then version-string scanning.

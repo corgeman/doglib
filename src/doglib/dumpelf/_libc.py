@@ -5,9 +5,6 @@ The build-ID extraction here requires a remote arbitrary-read (leak
 function) and is specific to the DumpELF workflow.  General-purpose
 download/identification utilities live in :mod:`doglib.libc`.
 """
-from __future__ import annotations
-
-from typing import Optional
 
 from pwnlib import libcdb
 from pwnlib.log import getLogger
@@ -29,7 +26,7 @@ PT_NOTE = 4
 NT_GNU_BUILD_ID = 3
 
 
-def _try_build_id_at(leak, address: int) -> Optional[str]:
+def _try_build_id_at(leak, address: int) -> str | None:
     """Check if a valid GNU Build ID note exists at *address*."""
     if leak.compare(address + 0xC, b"GNU\x00"):
         raw = b"".join(leak.raw(address + 0x10, 20))
@@ -38,7 +35,7 @@ def _try_build_id_at(leak, address: int) -> Optional[str]:
     return None
 
 
-def find_build_id(leak, libc_base: int) -> Optional[str]:
+def find_build_id(leak, libc_base: int) -> str | None:
     """Try to extract the GNU Build ID from the remote libc.
 
     First tries pwntools' well-known offsets (fast path), then falls

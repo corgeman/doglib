@@ -1,7 +1,5 @@
 """dog guesser — train and query the byte-level n-gram flag guesser."""
 
-from __future__ import annotations
-
 import sys
 
 

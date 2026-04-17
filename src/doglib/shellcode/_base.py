@@ -1,7 +1,5 @@
-from __future__ import annotations
-
+from collections.abc import Iterator
 from importlib.resources import files
-from typing import Iterator
 
 
 class ShellcodeSet:

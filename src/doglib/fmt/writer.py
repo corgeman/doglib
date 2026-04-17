@@ -1,5 +1,5 @@
 # very todo
-from typing import Iterator
+from collections.abc import Iterator
 from pwnlib.util.packing import p8, p16, p32, p64
 
 def write_data(data, *args, **kwargs):
