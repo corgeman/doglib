@@ -20,7 +20,7 @@ if this library is missing a common proof-of-work i'm unaware of, feel free to m
 # API
 
 ## `#!python detect_and_solve(data: bytes | str) -> bytes | None`
-given a dump of data `bytes`, scan for a known POW challenge, and return the correct response
+given a dump of data `bytes`, scan for a known POW challenge, solve it, and return the correct response
 
 ## `#!python do_pow(p: tube) -> tube`
 wrap this around a pwntools `tube` object to automatically solve the proof of work. it returns the `tube` object passed, so you can write something like this:

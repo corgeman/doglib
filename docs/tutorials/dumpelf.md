@@ -88,6 +88,7 @@ All of this has been mostly possible with pwntools already, and it's probably no
 This one is much harder. Dumping the program involves getting over two hurdles:
 - It's much faster to leak libc/ld-- we leak something identifiable like its build ID, then look that up on something like [libc.rip](https://libc.rip). This is a completely unique program, so this isn't possible.
 - An ELF loaded in memory is much different than it is on disk-- only the parts necessary for the program to run are loaded, meaning multiple critical sections simply do not exist in memory.
+
 DumpELF tries to solve the second problem for you with a best-attempt reconstruction, but the first is on us.  
 
 We could go ahead with using `dump_string` to try and fully dump the program, but against a real server this would likely take well over an hour. ELFs are mostly null bytes, and since our leak ends on an null byte, DumpELF needs about *18 thousand* calls to `dump_string` to get enough information. We need to find a way to leak *significantly* more data per round-trip against the server.
@@ -96,7 +97,8 @@ From here, I'll go over two solutions to this that both independently reduce the
 
 ## arb read improvement
 The first thing you should do is to try and improve your arbitrary read, if you can. 
-For us, we can fix this by reading multiple (`%s`es), all trying to read `addr+1`, `addr+2`, `addr+3` and so on. This significantly helps dump areas with heavy amounts of null bytes. While `pwntools` doesn't currently have something for this, `doglib` does under `FmtStrReader`:
+For us, we can fix this by sending multiple `%s` at once, all trying to read `addr+1`, `addr+2`, `addr+3` and so on. This significantly helps dump areas with heavy amounts of null bytes.  
+While `pwntools` doesn't currently have something for this, `doglib` does under `FmtStrReader`:
 ```python
 def do(payload):
     assert len(payload) < 256
@@ -176,7 +178,7 @@ def bulk_dump(addr,cnt):
     cnt = min(0x50,cnt) # we can stabily leak 0x50 bytes at a time
     ...
 ```
-Here's a correctly written `bulk_dump` for our situation. Again it is quite complicated due to format strings being difficult to work with for arbitrary reads, but hopefully you can make some sense of it:
+Here's a correctly written `bulk_dump` for our situation:
 ```python
 def domany(payload, amt):
     p.sendline(payload)

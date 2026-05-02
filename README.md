@@ -88,7 +88,7 @@ writeup using this on a real ctf challenge at [dumpelf_writeup.md](docs/dumpelf_
 *warning*: very very hacky barely works on x64/x86. use as a last resort!
 
 ## misc
-random stuff. worth reading yourself.
+random stuff. worth skimming yourself, docs [here](https://corgi.rip/doglib/modules/misc/)
 
 ## pow
 semi-universal CTF proof-of-work solver with speed in mind:

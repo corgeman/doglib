@@ -1,5 +1,5 @@
 # dog guesser
-this is a cli verson of the `flagguesser` module, which you can read about [here](../flagguesser.md). it lets you create and use models directly from the cli.
+this is a cli verson of the `flagguesser` module, which you can read about [here](../modules/flagguesser.md). it lets you create and use models directly from the cli.
 ```bash
 corgo@dog-computer:/tmp$ dog guesser guess "dogctf{congratz_u_got_it_48a093"
 
