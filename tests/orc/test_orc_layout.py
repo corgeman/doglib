@@ -55,6 +55,58 @@ def test_offsetof_invalid_raises(headers):
         headers.offsetof('Basic', 'nonexistent')
 
 
+def test_offsetof_combined_path(headers):
+    assert headers.offsetof('Basic.a') == 0
+    assert headers.offsetof('Basic.b') == 4
+    assert headers.offsetof('FinalBoss.matrix') == 8
+    assert headers.offsetof('FinalBoss.matrix[1][2]') == 28
+    assert headers.offsetof('BossFight.u.data.raw') == 32
+
+
+def test_offsetof_combined_matches_two_arg(headers):
+    cases = [
+        ('Basic', 'a'),
+        ('Basic', 'c'),
+        ('FinalBoss', 'matrix[1][2]'),
+        ('BossFight', 'u.data.raw'),
+    ]
+    for t, f in cases:
+        assert headers.offsetof(t, f) == headers.offsetof(f"{t}.{f}")
+
+
+def test_offsetof_one_arg_without_dot_raises(headers):
+    with pytest.raises(ValueError, match='needs a field path'):
+        headers.offsetof('Basic')
+
+
+def test_getitem_offsets(headers):
+    assert int(headers['Basic'].a) == 0
+    assert int(headers['Basic'].b) == 4
+    assert int(headers['FinalBoss'].matrix) == 8
+    assert int(headers['FinalBoss'].matrix[1][2]) == 28
+    assert int(headers['BossFight'].u.data.raw) == 32
+
+
+def test_getitem_matches_offsetof(headers):
+    cases = [
+        ('Basic', 'a'),
+        ('FinalBoss', 'matrix'),
+        ('FinalBoss', 'matrix[1][2]'),
+        ('BossFight', 'u.data.raw'),
+    ]
+    for t, f in cases:
+        # walk the dotpath via attribute/index access on the cast result
+        addr = headers[t]
+        for tok in f.replace('[', '.[').split('.'):
+            if not tok:
+                continue
+            if tok.startswith('['):
+                addr = addr[int(tok[1:-1])]
+            else:
+                addr = getattr(addr, tok)
+        assert int(addr) == headers.offsetof(t, f)
+
+
 def test_containerof(headers):
     member_addr = 0x1000 + headers.offsetof('BossFight', 'u')
     base = headers.containerof('BossFight', 'u', member_addr)

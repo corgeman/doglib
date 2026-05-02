@@ -115,6 +115,19 @@ class ORC:
     def __exit__(self, *args):
         self.close()
 
+    def __getitem__(self, type_name):
+        """
+        Shortcut for cast(type_name, 0). Useful for quickly computing field
+        offsets via attribute and array access — the returned DWARFAddress
+        is an int subclass, so its value IS the offset.
+
+        Example:
+            headers['FinalBoss'].matrix          # -> 8
+            headers['FinalBoss'].matrix[1][2]    # -> 28
+            headers['BossFight'].u.data.raw      # -> 32
+        """
+        return self.cast(type_name, 0)
+
     def _get_dwarfinfo(self):
         """Lazy-loads and caches the DWARF info to avoid reopening the file repeatedly."""
         if self._dwarfinfo is None:
@@ -569,16 +582,30 @@ class ORC:
                 size *= d
         return size
 
-    def offsetof(self, type_name, field_path):
+    def offsetof(self, type_name, field_path=None):
         """
         Get the byte offset of a field within a struct.
         Supports dotted paths and array indices.
 
+        Can be called with a single combined path or two separate args. The
+        2-arg form is convenient when the field name is computed at runtime.
+
         Example:
+            headers.offsetof('FinalBoss.matrix')           -> 8
             headers.offsetof('FinalBoss', 'matrix')        -> 8
+            headers.offsetof('FinalBoss.matrix[1][2]')     -> 28
             headers.offsetof('FinalBoss', 'matrix[1][2]')  -> 28
+            headers.offsetof('BossFight.u.data.raw')       -> 24
             headers.offsetof('BossFight', 'u.data.raw')    -> 24
         """
+        if field_path is None:
+            dot = type_name.find('.')
+            if dot == -1:
+                raise ValueError(
+                    f"offsetof('{type_name}') needs a field path. "
+                    f"Pass 'Type.field' or use offsetof('Type', 'field')."
+                )
+            type_name, field_path = type_name[:dot], type_name[dot + 1:]
         die = self._get_type_die(type_name)
         tokens = self._tokenize_path(field_path)
         offset, _ = self._walk_field_path(die, tokens)
