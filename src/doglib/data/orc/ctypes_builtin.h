@@ -77,7 +77,7 @@ typedef Elf64_Phdr         _ct_Elf64_Phdr;
 
 // custom stuff
 // !! only add if it is consistent across all libc versions !!
-typedef struct _IO_jump_t {
+struct _IO_jump_t {
     size_t __dummy;
     size_t __dummy2;
     void (*__finish)(FILE *, int);
@@ -99,21 +99,21 @@ typedef struct _IO_jump_t {
     int (*__stat)(FILE *, void *);
     int (*__showmanyc)(FILE *);
     void (*__imbue)(FILE *, void *);
-} _ct_IO_jump_t;
+};
 
-typedef struct _IO_FILE_plus {
+struct _IO_FILE_plus {
     FILE file;
     const struct _IO_jump_t *vtable;
-} _ct_IO_FILE_plus;
+};
 
-typedef struct malloc_chunk {
-    size_t      mchunk_prev_size; 
-    size_t      mchunk_size;  
-    void* fd;   
+struct malloc_chunk {
+    size_t      mchunk_prev_size;
+    size_t      mchunk_size;
+    void* fd;
     void* bk;
     void* fd_nextsize;
     void* bk_nextsize;
-} _ct_malloc_chunk;
+};
  
 
 struct exit_function {
@@ -140,21 +140,21 @@ struct exit_function_list {
 };
 
 // should be true for x86/x64
-typedef struct malloc_state {
+struct malloc_state {
     int mutex;
     int flags;
     int have_fastchunks;
-    void *fastbinsY[10]; 
+    void *fastbinsY[10];
     void *top;
     void *last_remainder;
-    void *bins[254]; 
-    unsigned int binmap[4]; 
+    void *bins[254];
+    unsigned int binmap[4];
     struct malloc_state *next;
     struct malloc_state *next_free;
     size_t attached_threads;
     size_t system_mem;
     size_t max_system_mem;
-} _ct_malloc_state;
+};
 
 
 // wide_data
