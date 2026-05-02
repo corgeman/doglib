@@ -207,6 +207,28 @@ class ORC:
     def _find_member(self, struct_die, name):
         return self._get_resolver().find_member(struct_die, name)
 
+    def _member_names(self, struct_die):
+        """Yield member names dot-accessible on a struct/union/class DIE.
+        Recurses into anonymous struct/union members and base classes,
+        mirroring find_member()'s lookup behavior."""
+        for child in struct_die.iter_children():
+            if child.tag == 'DW_TAG_member':
+                name_attr = child.attributes.get('DW_AT_name')
+                if name_attr:
+                    yield name_attr.value.decode('utf-8')
+                    continue
+                anon_type = self._get_die_from_attr(child, 'DW_AT_type')
+                if anon_type:
+                    anon_unwrapped = self._unwrap_type(anon_type)
+                    if anon_unwrapped and anon_unwrapped.tag in STRUCT_TAGS:
+                        yield from self._member_names(anon_unwrapped)
+            elif child.tag == 'DW_TAG_inheritance':
+                base_type = self._get_die_from_attr(child, 'DW_AT_type')
+                if base_type:
+                    base_unwrapped = self._unwrap_type(base_type)
+                    if base_unwrapped:
+                        yield from self._member_names(base_unwrapped)
+
     def _get_array_subranges(self, array_die):
         return self._get_resolver().get_array_subranges(array_die)
 

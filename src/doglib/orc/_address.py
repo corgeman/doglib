@@ -60,6 +60,14 @@ class DWARFAddress(int):
         member_offset, next_type_die = result
         return DWARFAddress((int(self) + member_offset) & mask, self._orc, self._orc._ref(next_type_die))
 
+    def __dir__(self):
+        names = set(super().__dir__())
+        die = self._orc._get_die(self._type_die_offset)
+        current_die = self._orc._unwrap_type(die)
+        if current_die and current_die.tag in STRUCT_TAGS:
+            names.update(self._orc._member_names(current_die))
+        return sorted(names)
+
     def __getitem__(self, index):
         if not isinstance(index, int):
             raise TypeError("Array indices must be integers")

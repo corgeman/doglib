@@ -79,6 +79,45 @@ def test_dwarf_address_index_error(headers):
         _ = int_addr[0]
 
 
+def test_dwarf_address_dir_struct_fields(headers):
+    addr = headers.cast('Basic', 0x1000)
+    d = dir(addr)
+    assert 'a' in d
+    assert 'b' in d
+    assert 'c' in d
+    # int methods should still be present
+    assert 'bit_length' in d
+    assert 'to_bytes' in d
+
+
+def test_dwarf_address_dir_no_struct_fields_for_primitive(headers):
+    addr = headers.cast('int', 0x1000)
+    d = dir(addr)
+    assert 'a' not in d
+    assert 'b' not in d
+    # int methods preserved
+    assert 'bit_length' in d
+
+
+def test_dwarf_address_dir_no_fields_through_pointer(headers):
+    af = headers.cast('ArrayFun', 0x5000)
+    ptr_field = af.ptr  # char *
+    d = dir(ptr_field)
+    # Pointer-typed addresses should not surface pointee fields
+    assert not any(name in d for name in ('a', 'b', 'c'))
+
+
+def test_dwarf_address_dir_anonymous_members(headers):
+    addr = headers.cast('AnonMember', 0x1000)
+    d = dir(addr)
+    # Direct fields and fields from anonymous union/struct members
+    assert 'type' in d
+    assert 'as_int' in d
+    assert 'as_float' in d
+    assert 'x' in d
+    assert 'y' in d
+
+
 # ============================================================
 # Virtual-address space
 # ============================================================

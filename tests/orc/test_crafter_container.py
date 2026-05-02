@@ -381,3 +381,41 @@ def test_crafter_count_crafter_match(headers):
     ref.a = ord('X')
     ref.b = 0xABCD
     assert boss.b.count(ref) == 2
+
+
+# ============================================================
+# __dir__: tab-completion for fields, methods preserved
+# ============================================================
+
+def test_crafter_dir_struct_fields(headers):
+    chunk = headers.craft('Basic')
+    d = dir(chunk)
+    assert 'a' in d
+    assert 'b' in d
+    assert 'c' in d
+
+
+def test_crafter_dir_preserves_methods(headers):
+    chunk = headers.craft('Basic')
+    d = dir(chunk)
+    for name in ('fill', 'cyclic', 'copy', 'dump', 'items', 'values', 'value'):
+        assert name in d, f"{name} missing from dir(crafter)"
+
+
+def test_crafter_dir_anonymous_members(headers):
+    am = headers.craft('AnonMember')
+    d = dir(am)
+    assert 'type' in d
+    assert 'as_int' in d
+    assert 'as_float' in d
+    assert 'x' in d
+    assert 'y' in d
+
+
+def test_crafter_dir_primitive_field_no_member_names(headers):
+    fb = headers.craft('FinalBoss')
+    int_field = fb.matrix[0][0]
+    d = dir(int_field)
+    # Primitive sub-crafter: no struct fields to surface, should not crash.
+    assert 'matrix' not in d
+    assert 'a' not in d

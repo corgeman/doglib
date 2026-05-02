@@ -368,6 +368,13 @@ class DWARFCrafter:
             raise AttributeError(name)
         return DWARFCrafter(self._orc, self._orc._ref(member_type_die), self._backing, self._offset + member_offset)
 
+    def __dir__(self):
+        names = set(super().__dir__())
+        current_die = self._get_current_die()
+        if current_die and current_die.tag in STRUCT_TAGS:
+            names.update(self._orc._member_names(current_die))
+        return sorted(names)
+
     def __setattr__(self, name, value):
         # True Python dunders (__foo__) are stored on the Python object, not the
         # backing buffer.  Use crafter['__foo__'] = v to write to a C field whose
