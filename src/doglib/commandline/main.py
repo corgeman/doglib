@@ -7,7 +7,8 @@ from pwnlib.context import context
 def main() -> None:
     context.log_console = sys.stderr
 
-    from doglib.commandline import fetch, solve, dopow, flagguesser, orc
+    from doglib.commandline import fetch, solve, flagguesser, orc
+    from doglib.commandline import pow as pow_cli
 
     parser = argparse.ArgumentParser(
         prog="dog",
@@ -16,7 +17,7 @@ def main() -> None:
     sub = parser.add_subparsers(dest="command")
     fetch.register(sub)
     solve.register(sub)
-    dopow.register(sub)
+    pow_cli.register(sub)
     flagguesser.register(sub)
     orc.register(sub)
 

@@ -35,10 +35,9 @@ everything should be set up! if you want to test your speeds, you can run
 cargo run --release --features cuda --example gpu_bench
 ```
 which should report your expected hashrate. if you wanna test sha256 set `GPU_BENCH_ALGO=sha256`.  
-if you want to check if you're gpu accelerated, you can run the following:
-```python
-from doglib.pow._hash import _gpu_available
-print(_gpu_available())
+if you want to ensure you're gpu accelerated, the quickest way is:
+```sh
+dog pow check
 ```
 
 ## using

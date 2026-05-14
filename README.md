@@ -124,8 +124,8 @@ drop-in replacement for pwninit's template generator
 ### `dog fetch`
 given libc/ld, search debian/ubuntu repos for the other, optionally unstrip with `--dbg`  
 this checks a few spots pwninit doesn't  
-### `dog dopow`
-connect to server, attempt to autosolve pow, drop to interactive mode
+### `dog pow`
+tools to solve proof-of-work systems via cli; ex. `dog pow nc` connects to a server, autosolves pow, then drops into interactive mode
 ### `dog guesser`
 tools for the `flagguesser` module. `train` lets you train your own model, and `guess` lets you use it via cli
 
