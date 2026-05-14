@@ -235,3 +235,26 @@ struct _IO_wide_data {
     wchar_t _shortbuf[1];
     const struct _IO_jump_t *_wide_vtable;
 };
+
+
+#if defined(__x86_64__)
+struct __jmp_buf {
+    uint64_t rbx;
+    uint64_t rbp; // mangled
+    uint64_t r12;
+    uint64_t r13;
+    uint64_t r14;
+    uint64_t r15;
+    uint64_t rsp; // mangled
+    uint64_t rip; // mangled
+};
+#elif defined(__i386__)
+struct __jmp_buf {
+    uint32_t ebx;
+    uint32_t esi;
+    uint32_t edi;
+    uint32_t ebp;
+    uint32_t esp; // mangled
+    uint32_t eip; // mangled
+};
+#endif
