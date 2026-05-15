@@ -1,13 +1,9 @@
 import argparse
 import sys
 
-from pwnlib.context import context
-
 
 def main() -> None:
-    context.log_console = sys.stderr
-
-    from doglib.commandline import fetch, solve, flagguesser, orc
+    from doglib.commandline import fetch, solve, flagguesser, orc, brute
     from doglib.commandline import pow as pow_cli
 
     parser = argparse.ArgumentParser(
@@ -20,10 +16,14 @@ def main() -> None:
     pow_cli.register(sub)
     flagguesser.register(sub)
     orc.register(sub)
+    brute.register(sub)
 
     args = parser.parse_args()
     if args.command is None:
         parser.print_help()
         sys.exit(1)
+
+    from pwnlib.context import context
+    context.log_console = sys.stderr
 
     args.func(args)

@@ -19,6 +19,7 @@ from doglib.packer import *
 from doglib.rand import *
 from doglib.fmt import *
 from doglib.flagguesser import *
+from doglib.brute import *
 import doglib.shellcode as shellcode
 
 import doglib._hijack

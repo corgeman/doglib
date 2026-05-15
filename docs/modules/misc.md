@@ -16,7 +16,8 @@ p = process("./bin")
 if args.RERUN:
     sys.excepthook = rerun(p)
 ```
-now `python3 solve.py RERUN` will rerun your script everytime an uncaught exception is raised!
+now `python3 solve.py RERUN` will rerun your script everytime an uncaught exception is raised!  
+**NOTE**: check out [dog brute](../CLI/brute.md) before using this
 
 ### `#!python find_libc_leak(memory_dump: bytes, addr: int, aligned: bool = False, bits: int = 64) -> int | None`
 given a large dump of memory `memory_dump` that you know contains the address `addr` somewhere, search for that address by looking for anything that ends with the same last 12 bits (since those are not ASLR affected). `aligned` can be used to speed up the search if the memory dump is aligned, and `bits` sets whether you're searching a 32/64bit dump
