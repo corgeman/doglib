@@ -341,6 +341,104 @@ def test_delay_holds_failed_row_before_respawn(tmp_path):
     assert spawned == [1]
 
 
+def _stub_brute_arg(monkeypatch, *, pwn_args, orig_argv, argv=None, ipc=False):
+    from doglib import _hijack
+
+    captured = []
+    monkeypatch.setattr(_hijack._os, "execv", lambda path, argv_: captured.append((path, argv_)))
+    monkeypatch.setattr(_hijack, "_pwn_args", pwn_args)
+    monkeypatch.setattr(_hijack._sys, "orig_argv", orig_argv)
+    monkeypatch.setattr(_hijack._sys, "argv", argv if argv is not None else [orig_argv[-1]])
+    if ipc:
+        monkeypatch.setenv("_DOG_BRUTE_IPC", "5:1")
+    else:
+        monkeypatch.delenv("_DOG_BRUTE_IPC", raising=False)
+    return _hijack, captured
+
+
+def test_brute_arg_plain_relaunches(monkeypatch):
+    hijack, captured = _stub_brute_arg(
+        monkeypatch,
+        pwn_args={"BRUTE": "True"},
+        orig_argv=["python", "solve.py", "BRUTE"],
+        argv=["solve.py"],
+    )
+    hijack._maybe_relaunch_under_dog_brute()
+
+    assert len(captured) == 1
+    _, argv = captured[0]
+    assert argv[:4] == [hijack._sys.executable, "-m", "doglib.commandline.main", "brute"]
+    assert "solve.py" in argv
+    assert "--workers" not in argv
+    assert all(not a.startswith("BRUTE") for a in argv)
+
+
+def test_brute_arg_with_count_passes_workers(monkeypatch):
+    hijack, captured = _stub_brute_arg(
+        monkeypatch,
+        pwn_args={"BRUTE": "8"},
+        orig_argv=["python", "solve.py", "BRUTE=8"],
+        argv=["solve.py"],
+    )
+    hijack._maybe_relaunch_under_dog_brute()
+
+    _, argv = captured[0]
+    assert argv.index("--workers") < argv.index("solve.py")
+    assert argv[argv.index("--workers") + 1] == "8"
+    assert all(not a.startswith("BRUTE") for a in argv)
+
+
+def test_brute_arg_preserves_hook_and_non_ident_args_via_orig_argv(monkeypatch):
+    hijack, captured = _stub_brute_arg(
+        monkeypatch,
+        pwn_args={"BRUTE": "True", "REMOTE": "True"},
+        orig_argv=["python", "solve.py", "DEBUG", "REMOTE", "127.0.0.1", "BRUTE"],
+        argv=["solve.py"],
+    )
+    hijack._maybe_relaunch_under_dog_brute()
+
+    _, argv = captured[0]
+    after_script = argv[argv.index("solve.py") + 1:]
+    assert after_script == ["DEBUG", "REMOTE", "127.0.0.1"]
+
+
+def test_brute_arg_no_op_when_inside_worker(monkeypatch):
+    hijack, captured = _stub_brute_arg(
+        monkeypatch,
+        pwn_args={"BRUTE": "True"},
+        orig_argv=["python", "solve.py", "BRUTE"],
+        argv=["solve.py"],
+        ipc=True,
+    )
+    hijack._maybe_relaunch_under_dog_brute()
+
+    assert captured == []
+
+
+def test_brute_arg_no_op_without_brute(monkeypatch):
+    hijack, captured = _stub_brute_arg(
+        monkeypatch,
+        pwn_args={},
+        orig_argv=["python", "solve.py"],
+        argv=["solve.py"],
+    )
+    hijack._maybe_relaunch_under_dog_brute()
+
+    assert captured == []
+
+
+def test_brute_arg_no_op_when_orig_argv_lacks_script(monkeypatch):
+    hijack, captured = _stub_brute_arg(
+        monkeypatch,
+        pwn_args={"BRUTE": "True"},
+        orig_argv=["python", "-c", "exec(open('solve.py').read())", "BRUTE"],
+        argv=["-c"],
+    )
+    hijack._maybe_relaunch_under_dog_brute()
+
+    assert captured == []
+
+
 def test_forward_handler_drops_indented_records():
     parent_conn, child_conn = Pipe(duplex=True)
     handler = _PwnlibForwardHandler(child_conn, worker_id=1)

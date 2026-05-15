@@ -1,8 +1,12 @@
 # adding more methods to existing pwntools features
 # feel free to merge this (or the rest of this library i don't care)
+import os as _os
+import sys as _sys
+
 from pwnlib.tubes.tube import tube
 from pwnlib.elf.elf import ELF
 from pwnlib.log import getLogger
+from pwnlib.args import args as _pwn_args
 from functools import cached_property
 from .orc import ORC
 from .orc._sym import _CVarAccessor
@@ -10,6 +14,44 @@ from .orc._constants import va_mask
 from .asm import kasm
 
 log = getLogger(__name__)
+
+
+def _maybe_relaunch_under_dog_brute() -> None:
+    """If `BRUTE` appears in pwntools argv, re-exec the script under `dog brute`."""
+    brute_value = _pwn_args.get("BRUTE")
+    if not brute_value:
+        return
+    if _os.environ.get("_DOG_BRUTE_IPC"):
+        return
+
+    brute_flags: list[str] = []
+    if brute_value != "True":
+        try:
+            workers = int(brute_value, 0)
+        except ValueError:
+            workers = 0
+        if workers > 0:
+            brute_flags.extend(["--workers", str(workers)])
+
+    script = _sys.argv[0]
+    if not script or script.startswith("-"):
+        return
+    try:
+        script_idx = _sys.orig_argv.index(script)
+    except (ValueError, AttributeError):
+        return
+    forwarded = [
+        a for a in _sys.orig_argv[script_idx + 1:]
+        if a != "BRUTE" and not a.startswith("BRUTE=")
+    ]
+    cmd = [
+        _sys.executable, "-m", "doglib.commandline.main",
+        "brute", *brute_flags, script, *forwarded,
+    ]
+    _os.execv(_sys.executable, cmd)
+
+
+_maybe_relaunch_under_dog_brute()
 
 def _get_func_name(func):
     if isinstance(func, property):

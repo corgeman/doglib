@@ -27,3 +27,7 @@ def main() -> None:
     context.log_console = sys.stderr
 
     args.func(args)
+
+
+if __name__ == "__main__":
+    main()
