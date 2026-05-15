@@ -128,6 +128,8 @@ this checks a few spots pwninit doesn't
 tools to solve proof-of-work systems via cli; ex. `dog pow nc` connects to a server, autosolves pow, then drops into interactive mode
 ### `dog guesser`
 tools for the `flagguesser` module. `train` lets you train your own model, and `guess` lets you use it via cli
+### `dog brute`
+quality solve script bruteforcing. see [brute.md](docs/CLI/brute.md)
 
 ## log
 various stuff to assist in logging/debugging
