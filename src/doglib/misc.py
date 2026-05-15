@@ -225,14 +225,19 @@ def rerun(p: 'tube') -> Any:
     now `python3 solve.py RERUN` will restart your script if it crashes
     """
     path = os.path.abspath(inspect.stack()[1].filename)
+    script_in_argv = sys.argv[0]
 
     def rerun_exploit(exc_type, exc_value, exc_tb):
         try: p.close()
         except: pass
         print("one more roll")
-        rerun_args = [sys.executable, path]
-        rerun_args.extend([f"{k}={v}" for k, v in _args.items() if v])
-        rerun_args.append(f"LOG_LEVEL={_context.log_level}")
+        try:
+            script_idx = sys.orig_argv.index(script_in_argv)
+            forwarded = list(sys.orig_argv[script_idx + 1:])
+        except (ValueError, AttributeError):
+            forwarded = [f"{k}={v}" for k, v in _args.items() if v]
+            forwarded.append(f"LOG_LEVEL={_context.log_level}")
+        rerun_args = [sys.executable, path, *forwarded]
         if os.environ.get("TRIES") is None:
             os.environ["TRIES"] = "0"
         else:
