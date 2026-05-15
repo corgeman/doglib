@@ -9,7 +9,6 @@ from multiprocessing.connection import Connection
 
 import doglib.brute as brute
 from doglib.brute._ipc import (
-    ENV_DEBUG,
     MSG_FAIL,
     MSG_LOG,
     parse_ipc_env,
@@ -24,6 +23,8 @@ class _PwnlibForwardHandler(logging.Handler):
         self.worker_id = worker_id
 
     def emit(self, record: logging.LogRecord) -> None:
+        if record.levelno < _current_log_threshold():
+            return
         try:
             send_message(
                 self.conn,
@@ -36,6 +37,14 @@ class _PwnlibForwardHandler(logging.Handler):
             )
         except Exception:
             self.handleError(record)
+
+
+def _current_log_threshold() -> int:
+    try:
+        from pwnlib.context import context
+        return context.log_level
+    except Exception:
+        return logging.INFO
 
 
 def _open_devnull_stdin() -> None:
@@ -80,19 +89,12 @@ def _restore_pwnlib_terminal() -> None:
         pass
 
 
-def _configure_pwnlib_logging(conn: Connection, worker_id: int, debug: bool):
-    if debug:
-        try:
-            from pwnlib.context import context
-            context.defaults['log_level'] = logging.DEBUG
-        except Exception:
-            pass
-
+def _configure_pwnlib_logging(conn: Connection, worker_id: int):
     logger = logging.getLogger("pwnlib")
     handler = _PwnlibForwardHandler(conn, worker_id)
-    handler.setLevel(logging.DEBUG if debug else logging.INFO)
+    handler.setLevel(logging.DEBUG)
     logger.addHandler(handler)
-    logger.setLevel(logging.DEBUG if debug else logging.INFO)
+    logger.setLevel(logging.DEBUG)
     return logger, handler
 
 
@@ -124,8 +126,7 @@ def main(argv: list[str] | None = None) -> int:
     conn = Connection(fd)
     brute._set_worker_connection(conn, worker_id)
 
-    debug = os.environ.get(ENV_DEBUG) == "1"
-    logger, handler = _configure_pwnlib_logging(conn, worker_id, debug)
+    logger, handler = _configure_pwnlib_logging(conn, worker_id)
 
     def go_ahead() -> None:
         logger.removeHandler(handler)

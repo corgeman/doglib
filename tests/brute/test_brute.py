@@ -1,4 +1,5 @@
 import argparse
+import logging
 import os
 import subprocess
 import sys
@@ -74,13 +75,17 @@ main()
     assert result.stdout.strip() == "['ASDJIIJOASD']"
 
 
-def test_finish_outside_brute_is_noop(monkeypatch, capsys):
+def test_finish_outside_brute_is_noop(monkeypatch, caplog):
     monkeypatch.delenv(ENV_IPC, raising=False)
 
-    finish()
+    with caplog.at_level(logging.DEBUG, logger="doglib.brute"):
+        finish()
 
-    captured = capsys.readouterr()
-    assert "dog.finish() called outside dog brute, no-op" in captured.err
+    assert any(
+        record.levelno == logging.DEBUG
+        and "dog.finish() called outside dog brute" in record.getMessage()
+        for record in caplog.records
+    )
 
 
 def test_worker_finish_blocks_until_go_ahead(tmp_path):

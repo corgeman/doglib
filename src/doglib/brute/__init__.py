@@ -1,9 +1,10 @@
 """Bruteforce orchestration helpers for the `dog brute` CLI."""
 
 import os
-import sys
 from collections.abc import Callable
 from multiprocessing.connection import Connection
+
+from pwnlib.log import getLogger
 
 from doglib.brute._ipc import (
     ENV_ATTEMPT,
@@ -16,6 +17,8 @@ from doglib.brute._ipc import (
     recv_message,
     send_message,
 )
+
+log = getLogger(__name__)
 
 
 _conn: Connection | None = None
@@ -76,7 +79,7 @@ def finish(reason: str = "finished") -> None:
     global _finish_sent
 
     if not os.environ.get(ENV_IPC):
-        print("dog.finish() called outside dog brute, no-op", file=sys.stderr)
+        log.debug("dog.finish() called outside dog brute, no-op")
         return
 
     if _finish_sent:

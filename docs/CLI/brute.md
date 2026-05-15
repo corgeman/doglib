@@ -25,22 +25,22 @@ insert this function right *before* you drop into `.interactive()`, print a flag
 ## cli
 the format for the CLI is `dog brute [CLI_ARGUMENTS] [SCRIPT_AND_ARGUMENTS]`.
 ```bash
-usage: dog brute [-h] [-n N] [--timeout SEC] [--delay SEC] [--debug] [--instant] solve.py ...
+usage: dog brute [-h] [-n N] [--timeout SEC] [--delay SEC] [--instant] [--no-finish-check] solve.py ...
 
 Spawn multiple workers running the same solve script. When one worker calls dog.finish(), dog brute hands that worker's terminal back to you for
 interactive use.
 
 positional arguments:
-  solve.py         Solve script to run
-  script-arg       Arguments passed to solve.py
+  solve.py           Solve script to run
+  script-arg         Arguments passed to solve.py
 
 options:
-  -h, --help       show this help message and exit
-  -n, --workers N  Initial worker count (default: min(8, os.cpu_count()))
-  --timeout SEC    Per-attempt timeout in seconds (default: 60)
-  --delay SEC      Delay before respawning a finished attempt (default: 0)
-  --debug          Forward DEBUG-level pwnlib records to the TUI
-  --instant        Immediately hand off to a worker when it calls dog.finish()
+  -h, --help         show this help message and exit
+  -n, --workers N    Initial worker count (default: min(8, os.cpu_count()))
+  --timeout SEC      Per-attempt timeout in seconds (default: 60)
+  --delay SEC        Delay before respawning a finished attempt (default: 0)
+  --instant          Immediately hand off to a worker when it calls dog.finish()
+  --no-finish-check  Skip the static check that warns when solve.py has no finish() call
 ```
 
 ## tui

@@ -1,8 +1,10 @@
 """dog brute — run a solve script in parallel until one attempt wins."""
 
 import argparse
+import ast
 import os
 import sys
+import time
 
 
 def register(subparsers) -> None:
@@ -38,14 +40,14 @@ def register(subparsers) -> None:
         help="Delay before respawning a finished attempt (default: 0)",
     )
     p.add_argument(
-        "--debug",
-        action="store_true",
-        help="Forward DEBUG-level pwnlib records to the TUI",
-    )
-    p.add_argument(
         "--instant",
         action="store_true",
         help="Immediately hand off to a worker when it calls dog.finish()",
+    )
+    p.add_argument(
+        "--no-finish-check",
+        action="store_true",
+        help="Skip the static check that warns when solve.py has no finish() call",
     )
     p.add_argument("solve_path", metavar="solve.py", help="Solve script to run")
     p.add_argument(
@@ -64,6 +66,15 @@ def main(args) -> None:
     if script_args[:1] == ["--"]:
         script_args = script_args[1:]
 
+    if not args.no_finish_check and _has_finish_call(args.solve_path) is False:
+        print(
+            f"warning: no call to finish() found in {args.solve_path} — "
+            "dog brute will not work as intended!!",
+            "see docs/CLI/brute.md",
+            file=sys.stderr,
+        )
+        time.sleep(5)
+
     sys.exit(
         run(
             args.solve_path,
@@ -71,10 +82,27 @@ def main(args) -> None:
             args.workers,
             args.timeout,
             args.delay,
-            args.debug,
             args.instant,
         )
     )
+
+
+def _has_finish_call(path: str) -> bool | None:
+    """True if the script appears to call finish(); False if not; None if undetermined."""
+    try:
+        with open(path, "rb") as f:
+            tree = ast.parse(f.read(), filename=path)
+    except (OSError, SyntaxError, ValueError):
+        return None
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if isinstance(func, ast.Name) and func.id == "finish":
+            return True
+        if isinstance(func, ast.Attribute) and func.attr == "finish":
+            return True
+    return False
 
 
 def _positive_int(value: str) -> int:

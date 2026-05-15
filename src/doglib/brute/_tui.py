@@ -9,6 +9,7 @@ MAX_BAR_WIDTH = 30
 MIN_BAR_WIDTH = 8
 MIN_MESSAGE_WIDTH = 24
 STATUS_RUNNING = "running"
+STATUS_INFO = "info"
 STATUS_FAIL = "fail"
 STATUS_TIMEOUT = "timeout"
 STATUS_WON = "won"
@@ -19,6 +20,7 @@ PAIR_RED = 2
 PAIR_GREEN = 3
 PAIR_DIM = 4
 PAIR_SELECTED = 5
+PAIR_BLUE = 6
 
 
 def init_colors() -> None:
@@ -34,6 +36,7 @@ def init_colors() -> None:
     curses.init_pair(PAIR_GREEN, curses.COLOR_GREEN, -1)
     curses.init_pair(PAIR_DIM, curses.COLOR_WHITE, -1)
     curses.init_pair(PAIR_SELECTED, curses.COLOR_BLACK, curses.COLOR_CYAN)
+    curses.init_pair(PAIR_BLUE, curses.COLOR_BLUE, -1)
 
 
 def draw(
@@ -194,6 +197,8 @@ def _status_attr(status: str) -> int:
         return _color(PAIR_RED) | curses.A_BOLD
     if status == STATUS_WON:
         return _color(PAIR_GREEN) | curses.A_BOLD
+    if status == STATUS_INFO:
+        return _color(PAIR_BLUE) | curses.A_BOLD
     if status == STATUS_PAUSED:
         return _color(PAIR_DIM)
     return 0
@@ -217,6 +222,7 @@ def _addnstr(stdscr, y: int, x: int, text: str, n: int, attr: int = 0) -> None:
 __all__ = [
     "DEFAULT_BAR_WIDTH",
     "STATUS_FAIL",
+    "STATUS_INFO",
     "STATUS_PAUSED",
     "STATUS_RUNNING",
     "STATUS_TIMEOUT",

@@ -6,7 +6,6 @@ from multiprocessing.connection import Connection
 
 
 ENV_IPC = "_DOG_BRUTE_IPC"
-ENV_DEBUG = "_DOG_BRUTE_DEBUG"
 ENV_ATTEMPT = "DOG_BRUTE_ATTEMPT"
 ENV_WORKER_ID = "DOG_BRUTE_WORKER_ID"
 ENV_WORKERS = "DOG_BRUTE_WORKERS"
@@ -48,7 +47,6 @@ def recv_message(conn: Connection) -> dict:
 
 
 __all__ = [
-    "ENV_DEBUG",
     "ENV_IPC",
     "ENV_ATTEMPT",
     "ENV_WORKER_ID",

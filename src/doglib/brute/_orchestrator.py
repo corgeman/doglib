@@ -16,7 +16,6 @@ from multiprocessing.connection import Connection
 
 from doglib.brute import _tui
 from doglib.brute._ipc import (
-    ENV_DEBUG,
     ENV_ATTEMPT,
     ENV_IPC,
     ENV_WORKER_ID,
@@ -66,7 +65,6 @@ class BruteOrchestrator:
         workers: int,
         timeout: float,
         delay: float = 0.0,
-        debug: bool = False,
         instant: bool = False,
     ) -> None:
         self.solve_path = os.path.abspath(solve_path)
@@ -74,7 +72,6 @@ class BruteOrchestrator:
         self.target_workers = max(1, workers)
         self.timeout = timeout
         self.delay = max(0.0, delay)
-        self.debug = debug
         self.instant = instant
 
         self.selector = selectors.DefaultSelector()
@@ -168,7 +165,6 @@ class BruteOrchestrator:
 
         env = os.environ.copy()
         env[ENV_IPC] = f"{child_fd}:{slot.id}"
-        env[ENV_DEBUG] = "1" if self.debug else "0"
         env[ENV_ATTEMPT] = str(self.next_attempt)
         env[ENV_WORKER_ID] = str(slot.id)
         env[ENV_WORKERS] = str(self.target_workers)
@@ -256,11 +252,10 @@ class BruteOrchestrator:
         kind = msg.get("type")
         if kind == MSG_LOG:
             level = int(msg.get("level", 0))
-            if level < logging.INFO and not self.debug:
-                return True
+            msgtype = msg.get("pwnlib_msgtype")
             slot.log_count += 1
             slot.message = str(msg.get("msg", "")).replace("\n", " ")
-            slot.status = _tui.STATUS_FAIL if level >= 40 else _tui.STATUS_RUNNING
+            slot.status = _status_for_log(level, msgtype)
             self.dirty = True
         elif kind == MSG_FAIL:
             text = str(msg.get("traceback", "worker failed"))
@@ -834,10 +829,17 @@ def run(
     workers: int,
     timeout: float,
     delay: float = 0.0,
-    debug: bool = False,
     instant: bool = False,
 ) -> int:
-    return BruteOrchestrator(solve_path, script_args, workers, timeout, delay, debug, instant).run()
+    return BruteOrchestrator(solve_path, script_args, workers, timeout, delay, instant).run()
+
+
+def _status_for_log(level: int, msgtype: str | None) -> str:
+    if level >= logging.ERROR:
+        return _tui.STATUS_FAIL
+    if msgtype in ("info", "info_once"):
+        return _tui.STATUS_INFO
+    return _tui.STATUS_RUNNING
 
 
 def _failure_summary(text: str) -> str:
