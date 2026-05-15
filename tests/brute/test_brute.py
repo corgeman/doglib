@@ -15,12 +15,20 @@ from doglib.brute._ipc import (
     ENV_WORKER_ID,
     ENV_WORKERS,
     MSG_GO_AHEAD,
+    MSG_LOG,
     MSG_WON,
     parse_ipc_env,
     recv_message,
     send_message,
 )
-from doglib.brute._orchestrator import BruteOrchestrator, WorkerSlot, _failure_summary, _format_age
+from doglib.brute._orchestrator import (
+    BruteOrchestrator,
+    IPC_DRAIN_PER_TICK,
+    WorkerSlot,
+    _failure_summary,
+    _format_age,
+)
+from doglib.brute._worker import _PwnlibForwardHandler
 from doglib.commandline import brute as brute_cli
 
 
@@ -331,6 +339,59 @@ def test_delay_holds_failed_row_before_respawn(tmp_path):
     slot.respawn_at = time.monotonic() - 1
     orch._spawn_delayed_workers()
     assert spawned == [1]
+
+
+def test_forward_handler_drops_indented_records():
+    parent_conn, child_conn = Pipe(duplex=True)
+    handler = _PwnlibForwardHandler(child_conn, worker_id=1)
+
+    indented = logging.LogRecord(
+        "pwnlib", logging.INFO, __file__, 0, "b'foo\\n'", None, None
+    )
+    indented.pwnlib_msgtype = "indented"
+    info = logging.LogRecord(
+        "pwnlib", logging.INFO, __file__, 0, "got shell", None, None
+    )
+    info.pwnlib_msgtype = "info"
+
+    handler.emit(indented)
+    handler.emit(info)
+
+    assert parent_conn.poll() is True
+    msg = recv_message(parent_conn)
+    assert msg["msg"] == "got shell"
+    assert msg["pwnlib_msgtype"] == "info"
+    assert parent_conn.poll() is False
+
+
+def test_handle_ipc_drains_up_to_cap_per_call(tmp_path):
+    solve = tmp_path / "solve.py"
+    solve.write_text("pass\n")
+    orch = BruteOrchestrator(str(solve), [], workers=1, timeout=5)
+
+    parent_conn, child_conn = Pipe(duplex=True)
+    slot = WorkerSlot(1, conn=parent_conn)
+    orch.slots = {1: slot}
+
+    overflow = IPC_DRAIN_PER_TICK + 10
+    for i in range(overflow):
+        send_message(
+            child_conn,
+            MSG_LOG,
+            worker_id=1,
+            level=20,
+            levelname="INFO",
+            msg=f"line {i}",
+            pwnlib_msgtype="info",
+        )
+
+    orch._handle_ipc(slot)
+    assert slot.log_count == IPC_DRAIN_PER_TICK
+    assert parent_conn.poll() is True
+
+    orch._handle_ipc(slot)
+    assert slot.log_count == overflow
+    assert parent_conn.poll() is False
 
 
 def test_expected_logs_learns_from_completed_attempts(tmp_path):

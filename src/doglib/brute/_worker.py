@@ -25,6 +25,8 @@ class _PwnlibForwardHandler(logging.Handler):
     def emit(self, record: logging.LogRecord) -> None:
         if record.levelno < _current_log_threshold():
             return
+        if getattr(record, "pwnlib_msgtype", None) == "indented":
+            return
         try:
             send_message(
                 self.conn,

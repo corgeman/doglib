@@ -35,6 +35,7 @@ TIMEOUT_NOTICE_SECONDS = 2.0
 SOFT_WORKER_CAP = 64
 DEFAULT_EXPECTED_LOGS = 20
 LOG_COUNT_HISTORY = 128
+IPC_DRAIN_PER_TICK = 256
 
 
 @dataclass
@@ -243,37 +244,41 @@ class BruteOrchestrator:
         if slot.conn is None:
             return False
 
-        try:
-            msg = recv_message(slot.conn)
-        except (EOFError, OSError):
-            self._close_conn(slot)
-            return False
+        for _ in range(IPC_DRAIN_PER_TICK):
+            if not slot.conn.poll():
+                break
+            try:
+                msg = recv_message(slot.conn)
+            except (EOFError, OSError):
+                self._close_conn(slot)
+                return False
 
-        kind = msg.get("type")
-        if kind == MSG_LOG:
-            level = int(msg.get("level", 0))
-            msgtype = msg.get("pwnlib_msgtype")
-            slot.log_count += 1
-            slot.message = str(msg.get("msg", "")).replace("\n", " ")
-            slot.status = _status_for_log(level, msgtype)
-            self.dirty = True
-        elif kind == MSG_FAIL:
-            text = str(msg.get("traceback", "worker failed"))
-            slot.fail_text = text
-            slot.message = _failure_summary(text)
-            slot.status = _tui.STATUS_FAIL
-            self.last_failure = self._failure_text(slot, text)
-            self.dirty = True
-        elif kind == MSG_WON:
-            reason = str(msg.get("reason") or "finished")
-            slot.message = reason
-            slot.status = _tui.STATUS_WON
-            slot.won = True
-            slot.win_reason = reason
-            self.winner = slot
-            if self.instant:
-                self._handoff_requested = True
-            self.dirty = True
+            kind = msg.get("type")
+            if kind == MSG_LOG:
+                level = int(msg.get("level", 0))
+                msgtype = msg.get("pwnlib_msgtype")
+                slot.log_count += 1
+                slot.message = str(msg.get("msg", "")).replace("\n", " ")
+                slot.status = _status_for_log(level, msgtype)
+                self.dirty = True
+            elif kind == MSG_FAIL:
+                text = str(msg.get("traceback", "worker failed"))
+                slot.fail_text = text
+                slot.message = _failure_summary(text)
+                slot.status = _tui.STATUS_FAIL
+                self.last_failure = self._failure_text(slot, text)
+                self.dirty = True
+            elif kind == MSG_WON:
+                reason = str(msg.get("reason") or "finished")
+                slot.message = reason
+                slot.status = _tui.STATUS_WON
+                slot.won = True
+                slot.win_reason = reason
+                self.winner = slot
+                if self.instant:
+                    self._handoff_requested = True
+                self.dirty = True
+
         return True
 
     def _handle_stdout(self, slot: WorkerSlot) -> bool:
