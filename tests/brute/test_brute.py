@@ -662,6 +662,64 @@ def test_monitor_overlay_close_resets_scroll(tmp_path):
     assert orch.monitor_scroll == 0
 
 
+class _FakeScreen:
+    def __init__(self, keys):
+        self.keys = list(keys)
+
+    def getch(self):
+        if not self.keys:
+            return -1
+        return self.keys.pop(0)
+
+    def getmaxyx(self):
+        return 20, 80
+
+
+def test_enter_on_won_worker_enters_monitor_mode(tmp_path):
+    solve = tmp_path / "solve.py"
+    solve.write_text("pass\n")
+    orch = BruteOrchestrator(str(solve), [], workers=1, timeout=5)
+    orch.slots = {1: WorkerSlot(1, won=True, win_reason="got shell")}
+    orch.selected_id = 1
+
+    orch._handle_keys(_FakeScreen([10]), time.monotonic())
+
+    assert orch.monitor_id == 1
+    assert orch._handoff_requested is False
+
+
+def test_i_keypress_prefers_selected_winner_over_lowest_id(tmp_path):
+    solve = tmp_path / "solve.py"
+    solve.write_text("pass\n")
+    orch = BruteOrchestrator(str(solve), [], workers=1, timeout=5)
+    orch.slots = {
+        1: WorkerSlot(1, won=True, win_reason="first"),
+        3: WorkerSlot(3, won=True, win_reason="third"),
+    }
+    orch.selected_id = 3
+
+    orch._handle_keys(_FakeScreen([ord("i")]), time.monotonic())
+
+    assert orch._handoff_requested is True
+    assert orch.winner is orch.slots[3]
+
+
+def test_i_keypress_falls_back_to_first_winner_when_focus_not_won(tmp_path):
+    solve = tmp_path / "solve.py"
+    solve.write_text("pass\n")
+    orch = BruteOrchestrator(str(solve), [], workers=1, timeout=5)
+    orch.slots = {
+        1: WorkerSlot(1),
+        2: WorkerSlot(2, won=True, win_reason="second"),
+    }
+    orch.selected_id = 1
+
+    orch._handle_keys(_FakeScreen([ord("i")]), time.monotonic())
+
+    assert orch._handoff_requested is True
+    assert orch.winner is orch.slots[2]
+
+
 def test_winner_notice_uses_finished_reason(tmp_path):
     solve = tmp_path / "solve.py"
     solve.write_text("pass\n")

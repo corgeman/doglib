@@ -433,7 +433,7 @@ class BruteOrchestrator:
                     self.monitor_scroll = 0
                     self.dirty = True
                 elif ch in (ord("i"), ord("I")):
-                    self._request_first_winner()
+                    self._request_winner_handoff()
                 elif ch in (10, 13, curses.KEY_ENTER) and slot is not None and slot.won:
                     self._request_handoff(slot)
                 elif ch == curses.KEY_UP and slot is not None:
@@ -464,12 +464,9 @@ class BruteOrchestrator:
                 slot = self._selected_slot()
                 if slot is None:
                     continue
-                if slot.won:
-                    self._request_handoff(slot)
-                else:
-                    self.monitor_id = slot.id
-                    self.monitor_scroll = 0
-                    self.dirty = True
+                self.monitor_id = slot.id
+                self.monitor_scroll = 0
+                self.dirty = True
             elif ch in (ord("r"), ord("R")):
                 self._restart_selected()
             elif ch in (ord("+"), ord("=")):
@@ -490,7 +487,7 @@ class BruteOrchestrator:
                 self.show_help = not self.show_help
                 self.dirty = True
             elif ch in (ord("i"), ord("I")):
-                self._request_first_winner()
+                self._request_winner_handoff()
             elif ch == ord("q"):
                 if now <= self.quit_confirm_until:
                     self._kill_all()
@@ -568,6 +565,15 @@ class BruteOrchestrator:
         if not won:
             return
         self._request_handoff(sorted(won, key=lambda s: s.id)[0])
+
+    def _request_winner_handoff(self) -> None:
+        focus_id = self.monitor_id if self.monitor_id is not None else self.selected_id
+        if focus_id is not None:
+            slot = self.slots.get(focus_id)
+            if slot is not None and slot.won:
+                self._request_handoff(slot)
+                return
+        self._request_first_winner()
 
     def _sorted_ids(self) -> list[int]:
         return sorted(self.slots)
