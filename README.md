@@ -5,7 +5,7 @@ from dog import *
 # start cooking
 ```
 
-documentation at [https://corgi.rip/doglib/](https://corgi.rip/doglib/)
+online documentation at [https://corgi.rip/doglib/](https://corgi.rip/doglib/)
 
 ## install
 ```bash
@@ -84,11 +84,11 @@ d = DumpELF(leak, leaked_ptr)
 d.dump("./target_dump.elf")  # write reconstructed binary. itll run! maybe.
 libc = d.libc # (attempt) getting libc, slightly better than dynelf
 ```
-writeup using this on a real ctf challenge at [dumpelf_writeup.md](docs/dumpelf_writeup.md)  
+writeup using this on a real ctf challenge at [dumpelf_writeup.md](docs/tutorials/dumpelf.md)  
 *warning*: very very hacky barely works on x64/x86. use as a last resort!
 
 ## misc
-random stuff. worth skimming yourself, docs [here](https://corgi.rip/doglib/modules/misc/)
+random stuff. worth skimming yourself, docs [here](docs/modules/misc.md)
 
 ## pow
 semi-universal CTF proof-of-work solver with speed in mind:
@@ -171,7 +171,7 @@ exe = ELF("./blah.bin") # say this has a fmtstr vuln
 p = process([exe.path])
 
 x = FmtStrReader(6,badchars=b'\n') # payload shows up at index 6, we can't use b'\n'
-pl = x.payload(exe.address, 12) # i want to read a guaranteed 12 bytes at 'addr'
+pl = x.payload(exe.address, 12) # i want to read the first 12 bytes at exe.address
 p.sendline(pl)
 print(x.parse(p.recv())) # b'\x7fELF\x02\x01\x01\x00\x00\x00\x00\x00'
 ```
@@ -186,7 +186,7 @@ optional rust extensions to make certain doglib features MUCH faster. not instal
 uses [gimli](https://github.com/gimli-rs/gimli) to parse debug info 20x faster  
 note that this only matters on the first parse, afterwards we cache it  
 ### pow_solver
-two very fast proof-of-work solvers in rust
+two very fast proof-of-work solvers in rust/cuda
 - sloth: fastest solver for [redpwn/kctf pow](https://github.com/redpwn/pow) i am aware of. 2nd place is [this](https://anemato.de/blog/kctf-vdf) which is ~10% slower
 - hash: fast bruteforcer for "find hash with N leading zeros"-based POWs, in my tests it's basically equivalent to hashcat. works on WSL too. requires some additional setup, see [gpu_pow_setup.md](docs/gpu_pow_setup.md). includes cpu fallback (although MUCH slower)
 
@@ -195,7 +195,7 @@ character-by-character brutes taking too long?
 have an ngram model trained on 10k+ real ctf flags help you out:
 ```python
 from dog import *
-print(guesser.guess("ctf{th")[:5])
+print(guesser("ctf{th")[:5])
 # [b'e', b'3', b'_', b'a', b'i']
 ```
 guessctf is dead #notsorry
