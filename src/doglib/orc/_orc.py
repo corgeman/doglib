@@ -27,7 +27,7 @@ class ORC:
     DWARF-powered C type toolkit. Parses debug information from ELF binaries
     to provide struct crafting, parsing, casting, and type introspection.
     """
-    _CACHE_VERSION = 9
+    _CACHE_VERSION = 10
 
     # DIE references stored in the DWARF cache / on DWARFAddress / DWARFCrafter
     # etc. are 2-tuples: (die_offset, source) where source is 0 for the main
@@ -46,6 +46,10 @@ class ORC:
             self.buildid = self._read_buildid(elffile)
         self._dwarf_vars = {}
         self._dwarf_types = {}
+        # Function-locally-declared vars/types, keyed by the innermost
+        # enclosing subprogram's DW_AT_name. Surfaced via ORC.scope().
+        self._dwarf_local_vars = {}
+        self._dwarf_local_types = {}
         self._dwarf_parsed = False
         self._dwarf_file = None
         self._dwarfinfo = None
@@ -343,6 +347,8 @@ class ORC:
                     raise ValueError("stale cache version")
                 self._dwarf_vars = data.get('vars', {})
                 self._dwarf_types = data.get('types', {})
+                self._dwarf_local_vars = data.get('local_vars', {})
+                self._dwarf_local_types = data.get('local_types', {})
                 self._dwarf_parsed = True
                 return
             except Exception as e:
@@ -351,7 +357,9 @@ class ORC:
         log.info(f"Parsing DWARF info for {os.path.basename(self.path)}... (This will be cached)")
         if _dwarf_parser_rs is not None:
             try:
-                self._dwarf_vars, self._dwarf_types = _dwarf_parser_rs.parse_dwarf(self.path)
+                (self._dwarf_vars, self._dwarf_types,
+                 self._dwarf_local_vars, self._dwarf_local_types) = \
+                    _dwarf_parser_rs.parse_dwarf(self.path)
                 if not self._dwarf_vars and not self._dwarf_types:
                     raise ValueError("Rust DWARF parser returned an empty index")
                 self._save_dwarf_cache(cache_file)
@@ -360,6 +368,8 @@ class ORC:
                 log.warning(f"Rust DWARF parser failed ({e}), falling back to pyelftools")
                 self._dwarf_vars = {}
                 self._dwarf_types = {}
+                self._dwarf_local_vars = {}
+                self._dwarf_local_types = {}
 
         dwarfinfo = self._get_dwarfinfo()
         if not dwarfinfo:
@@ -369,41 +379,57 @@ class ORC:
 
         sup = getattr(dwarfinfo, 'supplementary_dwarfinfo', None)
 
-        def _index_die(die, src, in_subprogram):
-            # Skip DW_TAG_variable inside a DW_TAG_subprogram ancestor: locals
-            # would shadow file-scope globals of the same name in the index.
-            if die.tag in CACHEABLE_TAGS and not (
-                die.tag == 'DW_TAG_variable' and in_subprogram
-            ):
-                name_attr = die.attributes.get('DW_AT_name')
+        def _read_name(die):
+            """Decode DW_AT_name (handling sup-resolved int values) to str, or None."""
+            name_attr = die.attributes.get('DW_AT_name')
+            if not name_attr:
+                return None
+            v = name_attr.value
+            if isinstance(v, int):
+                if sup is None:
+                    return None
+                try:
+                    v = sup.get_string_from_table(v)
+                except Exception:
+                    return None
+            if isinstance(v, bytes):
+                return v.decode('utf-8', errors='ignore')
+            return None
+
+        def _index_die(die, src, scope):
+            # scope: (in_subprogram: bool, innermost_subprogram_name: str | None).
+            # File scope is (False, None). Inside a named subprogram, vars/types
+            # are routed to self._dwarf_local_{vars,types}[name]. Inside an
+            # *anonymous* subprogram (True, None), descendants are dropped —
+            # there's no key to file them under.
+            in_func, func_name = scope
+            if die.tag in CACHEABLE_TAGS:
                 is_decl = die.attributes.get('DW_AT_declaration')
-                if name_attr and not (is_decl and is_decl.value):
-                    name_val = name_attr.value
-                    if isinstance(name_val, int):
-                        # DW_FORM_GNU_strp_alt / DW_FORM_strp_sup: the name
-                        # lives in the supplementary .debug_str table.
-                        if sup is not None:
-                            try:
-                                name_val = sup.get_string_from_table(name_val)
-                            except Exception:
-                                name_val = None
-                        else:
-                            name_val = None
-                    if isinstance(name_val, bytes):
-                        name = name_val.decode('utf-8', errors='ignore')
+                if not (is_decl and is_decl.value):
+                    name = _read_name(die)
+                    if name is not None:
                         ref = (die.offset, src)
-                        if die.tag == 'DW_TAG_variable':
-                            self._dwarf_vars[name] = ref
-                        else:
-                            self._dwarf_types[name] = ref
+                        is_var = die.tag == 'DW_TAG_variable'
+                        if not in_func:
+                            if is_var:
+                                self._dwarf_vars[name] = ref
+                            else:
+                                self._dwarf_types[name] = ref
+                        elif func_name is not None:
+                            bucket = (self._dwarf_local_vars if is_var
+                                      else self._dwarf_local_types)
+                            bucket.setdefault(func_name, {})[name] = ref
             if die.has_children:
-                child_in_sub = in_subprogram or die.tag == 'DW_TAG_subprogram'
+                if die.tag == 'DW_TAG_subprogram':
+                    child_scope = (True, _read_name(die))
+                else:
+                    child_scope = scope
                 for child in die.iter_children():
-                    _index_die(child, src, child_in_sub)
+                    _index_die(child, src, child_scope)
 
         def _index_dwarfinfo(di, src):
             for CU in di.iter_CUs():
-                _index_die(CU.get_top_DIE(), src, False)
+                _index_die(CU.get_top_DIE(), src, (False, None))
 
         _index_dwarfinfo(dwarfinfo, self._SRC_MAIN)
         if sup is not None:
@@ -418,6 +444,8 @@ class ORC:
                 'cache_version': self._CACHE_VERSION,
                 'vars': self._dwarf_vars,
                 'types': self._dwarf_types,
+                'local_vars': self._dwarf_local_vars,
+                'local_types': self._dwarf_local_types,
             }, f)
         self._dwarf_parsed = True
 
@@ -864,3 +892,79 @@ class ORC:
         die = self._get_type_die(type_name)
         unwrapped = self._unwrap_type(die)
         return self._get_type_name(unwrapped)
+
+    def scope(self, name):
+        """
+        Return a view of this ORC scoped to a specific function. Inside the
+        scope, type lookups (cast, craft, sizeof, describe, ...) check that
+        function's locally-declared types first, then fall back to the global
+        index.
+
+        Useful when the type you want only exists inside a function body —
+        e.g. a struct declared in main(). Raises KeyError if `name` has no
+        indexed local types; the error message lists available scope names.
+
+        Example:
+            inner = libc.orc.scope('do_lookup_x')
+            inner.describe('struct lookup_args')   # local type
+            inner.cast('FILE', some_addr)          # falls back to global
+        """
+        self._build_dwarf_cache()
+        if name not in self._dwarf_local_types:
+            available = sorted(self._dwarf_local_types)
+            sample = available[:10]
+            hint = repr(sample) + ('...' if len(available) > 10 else '')
+            raise KeyError(
+                f"No function-local types indexed for '{name}'. Available: {hint}"
+            )
+        return ScopedORC(self, name)
+
+
+class ScopedORC(ORC):
+    """
+    View of an ORC scoped to one function's locally-declared types.
+
+    Inherits ORC's API (cast, craft, parse, sizeof, offsetof, field_at,
+    containerof, describe, enum, resolve_type, __getitem__) but resolves
+    type names against the function's local types first, falling back to
+    the parent's global index.
+
+    Created via ORC.scope('funcname'). State (path, bits, DWARF cache,
+    dwarfinfo, resolver, file handle) is shared with the parent ORC via
+    attribute delegation — closing or rebuilding through this view
+    affects the parent.
+    """
+    def __init__(self, parent, scope_name):
+        # Intentionally do NOT call ORC.__init__: that would re-open the ELF
+        # and create independent cache dicts. We share all parent state via
+        # __getattr__ delegation.
+        self._parent = parent
+        self._scope = scope_name
+
+    def __getattr__(self, name):
+        # Only called for attributes missing on self/class — delegates
+        # _dwarf_vars, _dwarf_types, _dwarfinfo, bits, path, etc. to parent.
+        return getattr(self._parent, name)
+
+    def _resolve_type_name(self, name):
+        local = self._parent._dwarf_local_types.get(self._scope, {})
+        if name in local:
+            return local[name]
+        alias = self._BASE_TYPE_ALIASES.get(name)
+        if alias and alias in local:
+            return local[alias]
+        return self._parent._resolve_type_name(name)
+
+    def _build_dwarf_cache(self):
+        return self._parent._build_dwarf_cache()
+
+    def close(self):
+        # Parent owns the file handle; nothing to do here.
+        pass
+
+    def scope(self, name):
+        # Re-scoping always resolves through the parent ORC.
+        return self._parent.scope(name)
+
+    def __repr__(self):
+        return f"<ScopedORC {self._parent.path} scope={self._scope!r}>"

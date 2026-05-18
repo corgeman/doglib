@@ -2,7 +2,7 @@ from ._address import DWARFAddress, DWARFArray
 from ._cheader import ORCHeader, ORCInline
 from ._crafter import DWARFCrafter, DWARFArrayCrafter
 from ._enum import DWARFEnum
-from ._orc import ORC
+from ._orc import ORC, ScopedORC
 from ._builtin_types import CTypes
 
 # Lazy singleton instances of CTypes for the three common bit widths.
@@ -26,4 +26,4 @@ def __getattr__(name):
     raise AttributeError(name)
 
 
-__all__ = ["ORC", "ORCHeader", "ORCInline"]
+__all__ = ["ORC", "ScopedORC", "ORCHeader", "ORCInline"]

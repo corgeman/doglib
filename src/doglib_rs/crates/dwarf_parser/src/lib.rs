@@ -148,40 +148,57 @@ const MAX_SUP_FILE_BYTES: u64 = 1 << 31; // 2 GiB
 // ── Core parsing logic ────────────────────────────────────────────────────────
 
 /// Index a single compilation/type unit, inserting discovered names into
-/// the `vars` and `types` maps.  Returns Ok(()) on success; the caller
-/// decides whether to abort or continue on error.
+/// the `vars`/`types` maps for file-scope DIEs and into
+/// `local_vars`/`local_types` (keyed by the innermost enclosing subprogram's
+/// name) for DIEs nested inside a `DW_TAG_subprogram`.
+///
+/// Returns Ok(()) on success; the caller decides whether to abort or continue
+/// on error.
 fn index_unit(
     dwarf: &gimli::Dwarf<R>,
     header: gimli::UnitHeader<R>,
     vars: &mut HashMap<String, (u64, u8)>,
     types: &mut HashMap<String, (u64, u8)>,
+    local_vars: &mut HashMap<String, HashMap<String, (u64, u8)>>,
+    local_types: &mut HashMap<String, HashMap<String, (u64, u8)>>,
     source: u8,
 ) -> Result<(), String> {
     let unit = dwarf.unit(header).map_err(|e| e.to_string())?;
     let mut entries = unit.entries();
 
-    // Skip DW_TAG_variable inside any DW_TAG_subprogram ancestor: locals
-    // shadow file-scope globals of the same name in the flat-by-name index.
+    // Stack of (depth, optional subprogram name) for ancestors. Vars and types
+    // inside a subprogram get routed to local_{vars,types}[name] instead of the
+    // flat global maps — that keeps locally-defined types out of the global
+    // index where they'd shadow file-scope types with the same name.
     let mut depth: isize = 0;
-    let mut subprogram_depths: Vec<isize> = Vec::new();
+    let mut subprogram_stack: Vec<(isize, Option<String>)> = Vec::new();
 
     while let Some((delta, entry)) = entries.next_dfs().map_err(|e| e.to_string())? {
         depth += delta;
-        while subprogram_depths.last().is_some_and(|&d| d >= depth) {
-            subprogram_depths.pop();
+        while subprogram_stack.last().is_some_and(|(d, _)| *d >= depth) {
+            subprogram_stack.pop();
         }
         let tag = entry.tag();
         if tag == gimli::DW_TAG_subprogram {
-            subprogram_depths.push(depth);
+            // Capture this subprogram's DW_AT_name so descendants can be
+            // attributed to it. Anonymous subprograms (no name) push None;
+            // descendants then have no place to land and are skipped.
+            let sub_name = read_die_name(&unit, dwarf, entry).map_err(|e| e.to_string())?;
+            subprogram_stack.push((depth, sub_name));
         }
-        let in_subprogram = !subprogram_depths.is_empty();
+        let enclosing_func: Option<&str> = subprogram_stack
+            .last()
+            .and_then(|(_, n)| n.as_deref());
+        let in_subprogram = !subprogram_stack.is_empty();
 
         let is_var = tag == gimli::DW_TAG_variable;
         let is_type = TYPE_TAGS.contains(&tag);
         if !is_var && !is_type {
             continue;
         }
-        if is_var && in_subprogram {
+        // Inside an anonymous subprogram there's nowhere to attribute the
+        // local, so drop it (matches pre-scope behavior for vars).
+        if in_subprogram && enclosing_func.is_none() {
             continue;
         }
 
@@ -201,18 +218,8 @@ fn index_unit(
             continue;
         }
 
-        let name_attr = entry
-            .attr(gimli::DW_AT_name)
-            .map_err(|e| e.to_string())?;
-
-        let name: String = match name_attr {
-            Some(attr) => match dwarf.attr_string(&unit, attr.value()) {
-                Ok(s) => match gimli::Reader::to_slice(&s) {
-                    Ok(cow) => String::from_utf8_lossy(&cow).into_owned(),
-                    Err(_) => continue,
-                },
-                Err(_) => continue,
-            },
+        let name = match read_die_name(&unit, dwarf, entry).map_err(|e| e.to_string())? {
+            Some(n) => n,
             None => continue,
         };
 
@@ -223,19 +230,55 @@ fn index_unit(
         let abs_offset = (cu_abs + entry.offset().0) as u64;
         let ref_ = (abs_offset, source);
 
-        if is_var {
-            vars.insert(name, ref_);
-        } else {
-            types.insert(name, ref_);
+        match (in_subprogram, is_var) {
+            (false, true) => { vars.insert(name, ref_); }
+            (false, false) => { types.insert(name, ref_); }
+            (true, true) => {
+                local_vars
+                    .entry(enclosing_func.unwrap().to_string())
+                    .or_default()
+                    .insert(name, ref_);
+            }
+            (true, false) => {
+                local_types
+                    .entry(enclosing_func.unwrap().to_string())
+                    .or_default()
+                    .insert(name, ref_);
+            }
         }
     }
 
     Ok(())
 }
 
+/// Read a DIE's DW_AT_name as an owned String, if it has one and the string
+/// data resolves cleanly.  Returns Ok(None) for missing or unreadable names.
+fn read_die_name(
+    unit: &gimli::Unit<R>,
+    dwarf: &gimli::Dwarf<R>,
+    entry: &gimli::DebuggingInformationEntry<R>,
+) -> gimli::Result<Option<String>> {
+    let name_attr = match entry.attr(gimli::DW_AT_name)? {
+        Some(a) => a,
+        None => return Ok(None),
+    };
+    let s = match dwarf.attr_string(unit, name_attr.value()) {
+        Ok(s) => s,
+        Err(_) => return Ok(None),
+    };
+    let cow = match gimli::Reader::to_slice(&s) {
+        Ok(c) => c,
+        Err(_) => return Ok(None),
+    };
+    Ok(Some(String::from_utf8_lossy(&cow).into_owned()))
+}
+
+type GlobalMap = HashMap<String, (u64, u8)>;
+type LocalMap = HashMap<String, HashMap<String, (u64, u8)>>;
+
 fn do_parse(
     path: &str,
-) -> Result<(HashMap<String, (u64, u8)>, HashMap<String, (u64, u8)>), String> {
+) -> Result<(GlobalMap, GlobalMap, LocalMap, LocalMap), String> {
     let data = std::fs::read(path).map_err(|e| format!("read error: {e}"))?;
     let obj = object::File::parse(data.as_slice()).map_err(|e| format!("ELF parse error: {e}"))?;
 
@@ -271,21 +314,33 @@ fn do_parse(
         }
     }
 
-    let mut vars: HashMap<String, (u64, u8)> = HashMap::new();
-    let mut types: HashMap<String, (u64, u8)> = HashMap::new();
+    let mut vars: GlobalMap = HashMap::new();
+    let mut types: GlobalMap = HashMap::new();
+    let mut local_vars: LocalMap = HashMap::new();
+    let mut local_types: LocalMap = HashMap::new();
 
     dwarf.populate_abbreviations_cache(gimli::AbbreviationsCacheStrategy::All);
 
     let mut units = dwarf.units();
     while let Some(header) = units.next().map_err(|e| e.to_string())? {
-        if let Err(e) = index_unit(&dwarf, header, &mut vars, &mut types, SRC_MAIN) {
+        if let Err(e) = index_unit(
+            &dwarf, header,
+            &mut vars, &mut types,
+            &mut local_vars, &mut local_types,
+            SRC_MAIN,
+        ) {
             eprintln!("doglib_rs::dwarf_parser: skipping malformed CU: {e}");
         }
     }
 
     let mut type_units = dwarf.type_units();
     while let Some(header) = type_units.next().map_err(|e| e.to_string())? {
-        if let Err(e) = index_unit(&dwarf, header, &mut vars, &mut types, SRC_MAIN) {
+        if let Err(e) = index_unit(
+            &dwarf, header,
+            &mut vars, &mut types,
+            &mut local_vars, &mut local_types,
+            SRC_MAIN,
+        ) {
             eprintln!("doglib_rs::dwarf_parser: skipping malformed type unit: {e}");
         }
     }
@@ -297,28 +352,35 @@ fn do_parse(
     if let Some(sup) = dwarf.sup() {
         let mut sup_units = sup.units();
         while let Some(header) = sup_units.next().map_err(|e| e.to_string())? {
-            if let Err(e) = index_unit(sup, header, &mut vars, &mut types, SRC_SUP) {
+            if let Err(e) = index_unit(
+                sup, header,
+                &mut vars, &mut types,
+                &mut local_vars, &mut local_types,
+                SRC_SUP,
+            ) {
                 eprintln!("doglib_rs::dwarf_parser: skipping malformed supplementary CU: {e}");
             }
         }
     }
 
-    Ok((vars, types))
+    Ok((vars, types, local_vars, local_types))
 }
 
 // ── Python-facing API ─────────────────────────────────────────────────────────
 
-/// parse_dwarf(path) -> (vars, types)
+/// parse_dwarf(path) -> (vars, types, local_vars, local_types)
 ///
-/// Each map is name -> (die_offset, source) where source is 0 for DIEs from
-/// the main binary's .debug_info and 1 for DIEs from a supplementary file.
+/// The two global maps are name -> (die_offset, source). The two local maps
+/// are funcname -> { name -> (die_offset, source) }, keyed by the innermost
+/// enclosing subprogram's DW_AT_name. Source is 0 for DIEs from the main
+/// binary's .debug_info and 1 for DIEs from a supplementary file.
 /// Offsets match pyelftools' die.offset.  Works for both linked binaries
 /// (ET_EXEC / ET_DYN) and relocatable objects (ET_REL); ELF relocations are
 /// applied transparently via gimli's RelocateReader.
 #[pyfunction]
 fn parse_dwarf(
     path: &str,
-) -> PyResult<(HashMap<String, (u64, u8)>, HashMap<String, (u64, u8)>)> {
+) -> PyResult<(GlobalMap, GlobalMap, LocalMap, LocalMap)> {
     do_parse(path).map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e))
 }
 

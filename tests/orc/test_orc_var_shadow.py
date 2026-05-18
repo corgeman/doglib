@@ -25,7 +25,8 @@ def _resolve_var_type_name(orc: ORC, name: str) -> str:
 
 def test_var_shadow_parity(change_to_test_dir, var_shadow_gcc):
     """Both parsers agree, and 'initial' is indexed under the global type."""
-    py_vars, py_types, rs_vars, rs_types = _parse_both_paths(f"./{var_shadow_gcc}")
+    (py_vars, py_types, _py_lv, _py_lt,
+     rs_vars, rs_types, _rs_lv, _rs_lt) = _parse_both_paths(f"./{var_shadow_gcc}")
     assert py_vars == rs_vars
     assert py_types == rs_types
     assert "initial" in py_vars

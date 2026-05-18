@@ -36,11 +36,12 @@ from pwnlib.context import context
 
 # ── helper: run both production code paths ───────────────────────────────────
 
-def _parse_both_paths(path: str) -> tuple[dict, dict, dict, dict]:
+def _parse_both_paths(path: str):
     """
     Parse ``path`` via both ``_build_dwarf_cache`` code paths.
 
-    Returns ``(py_vars, py_types, rs_vars, rs_types)``.
+    Returns ``(py_vars, py_types, py_local_vars, py_local_types,
+               rs_vars, rs_types, rs_local_vars, rs_local_types)``.
 
     Each run uses an isolated cache directory so neither run reads a stale
     on-disk JSON from the other.
@@ -53,6 +54,14 @@ def _parse_both_paths(path: str) -> tuple[dict, dict, dict, dict]:
     if orc_mod._dwarf_parser_rs is None:
         pytest.skip("doglib_rs not installed")
 
+    def _snapshot(elf):
+        return (
+            dict(elf._dwarf_vars),
+            dict(elf._dwarf_types),
+            {k: dict(v) for k, v in elf._dwarf_local_vars.items()},
+            {k: dict(v) for k, v in elf._dwarf_local_types.items()},
+        )
+
     with tempfile.TemporaryDirectory() as tmp:
         py_cache = os.path.join(tmp, "py")
         rs_cache = os.path.join(tmp, "rs")
@@ -64,22 +73,21 @@ def _parse_both_paths(path: str) -> tuple[dict, dict, dict, dict]:
             with context.local(cache_dir=py_cache):
                 elf = ORC(path)
                 elf._build_dwarf_cache()
-                py_vars  = dict(elf._dwarf_vars)
-                py_types = dict(elf._dwarf_types)
+                py_snap = _snapshot(elf)
 
         # Rust fast path
         with context.local(cache_dir=rs_cache):
             elf = ORC(path)
             elf._build_dwarf_cache()
-            rs_vars  = dict(elf._dwarf_vars)
-            rs_types = dict(elf._dwarf_types)
+            rs_snap = _snapshot(elf)
 
-    return py_vars, py_types, rs_vars, rs_types
+    return (*py_snap, *rs_snap)
 
 
 def _assert_parity(path: str, label: str = ""):
     """Run parity check and produce a useful diff on failure."""
-    py_vars, py_types, rs_vars, rs_types = _parse_both_paths(path)
+    (py_vars, py_types, py_lv, py_lt,
+     rs_vars, rs_types, rs_lv, rs_lt) = _parse_both_paths(path)
     tag = f" [{label}]" if label else f" [{os.path.basename(path)}]"
 
     only_py_vars  = set(py_vars)  - set(rs_vars)
@@ -108,6 +116,23 @@ def _assert_parity(path: str, label: str = ""):
         msgs.append(f"var offset mismatch{tag}: {sorted(var_offset_diff)[:10]}")
     if type_offset_diff:
         msgs.append(f"type offset mismatch{tag}: {sorted(type_offset_diff)[:10]}")
+
+    # Local (per-function) maps: both the set of scope names and the entries
+    # within each scope must match.
+    only_py_scopes = set(py_lt) - set(rs_lt)
+    only_rs_scopes = set(rs_lt) - set(py_lt)
+    if only_py_scopes:
+        msgs.append(f"local-type scopes only in Python{tag}: {sorted(only_py_scopes)[:10]}")
+    if only_rs_scopes:
+        msgs.append(f"local-type scopes only in Rust{tag}: {sorted(only_rs_scopes)[:10]}")
+    for scope in set(py_lt) & set(rs_lt):
+        if py_lt[scope] != rs_lt[scope]:
+            diff = sorted(set(py_lt[scope]) ^ set(rs_lt[scope]))[:10]
+            msgs.append(f"local-type contents differ{tag} in scope '{scope}': {diff}")
+    for scope in set(py_lv) & set(rs_lv):
+        if py_lv[scope] != rs_lv[scope]:
+            diff = sorted(set(py_lv[scope]) ^ set(rs_lv[scope]))[:10]
+            msgs.append(f"local-var contents differ{tag} in scope '{scope}': {diff}")
 
     assert not msgs, "\n".join(msgs)
 
@@ -172,7 +197,8 @@ def test_parity_cpp_inline(tmp_path):
          str(src), "-o", str(obj)],
         check=True,
     )
-    py_vars, py_types, rs_vars, rs_types = _parse_both_paths(str(obj))
+    (py_vars, py_types, _py_lv, _py_lt,
+     rs_vars, rs_types, _rs_lv, _rs_lt) = _parse_both_paths(str(obj))
     assert rs_vars  == py_vars
     assert rs_types == py_types
     assert "Animal"   in rs_types, "DW_TAG_class_type should be indexed"
@@ -192,7 +218,8 @@ def test_parity_no_dwarf(tmp_path):
         ["gcc", "-x", "c", "-c", str(src), "-o", str(obj)],
         check=True,
     )
-    py_vars, py_types, rs_vars, rs_types = _parse_both_paths(str(obj))
+    (py_vars, py_types, _py_lv, _py_lt,
+     rs_vars, rs_types, _rs_lv, _rs_lt) = _parse_both_paths(str(obj))
     assert rs_vars  == py_vars  == {}
     assert rs_types == py_types == {}
 
@@ -261,7 +288,7 @@ def test_rust_fallback(change_to_test_dir, challenge_gcc, monkeypatch):
         pytest.skip("Rust parser not installed")
 
     monkeypatch.setattr(
-        elf_module._dwarf_parser_rs, "parse_dwarf", lambda _path: ({}, {})
+        elf_module._dwarf_parser_rs, "parse_dwarf", lambda _path: ({}, {}, {}, {})
     )
 
     from doglib.orc import ORC

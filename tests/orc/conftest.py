@@ -83,6 +83,15 @@ def var_shadow_gcc(change_to_test_dir):
 
 
 @pytest.fixture(scope="session")
+def func_scope_gcc(change_to_test_dir):
+    """Compile func_scope.c (two functions each defining their own struct point)."""
+    return _compile(
+        ["gcc", "func_scope.c", "-o", "func_scope.challenge.elf", "-g", "-no-pie"],
+        "func_scope.challenge.elf",
+    )
+
+
+@pytest.fixture(scope="session")
 def challenge_clang(change_to_test_dir):
     """Compile challenge.c with clang. Skips if clang is unavailable."""
     return _compile(

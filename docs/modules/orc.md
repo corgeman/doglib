@@ -26,6 +26,7 @@ and MUCH more. Let's get into it!
 
 for this library to work, you will need debuginfo. if you're not sure how to get that, or would like some suggestions, see `TODO`.md
 
+VERY VERY VERY TODO WILL FULLY WRITE IN FUTURE
 
 # API
 
@@ -39,3 +40,7 @@ TODO
 ## `#!python ORCInline(source: str, bits: int | None = None)`
 
 TODO
+
+## `#!python ORC.scope(name: str) -> ScopedORC`
+
+Return an instance of this `ORC` scoped to the specific function `name`. Locally-defined types inside this function will take priority over globally-defined types.
