@@ -10,6 +10,11 @@
 // Global symbol mapped into the ELF for Level 6
 struct GlobalTest target_sym;
 
+// File-scope so the CLI's --sym lookup can resolve them via the ELF
+// symbol table + DWARF globals (locals aren't indexed).
+struct BossFight boss;
+struct FinalBoss final;
+
 void setup() {
     setvbuf(stdin, NULL, _IONBF, 0);
     setvbuf(stdout, NULL, _IONBF, 0);
@@ -56,7 +61,6 @@ int main() {
     }
 
     // Level 4
-    struct BossFight boss;
     memset(&boss, 0, sizeof(boss));
     printf("Level 4: Send %lu bytes for BossFight\n", sizeof(boss));
     read(0, &boss, sizeof(boss));
@@ -91,7 +95,6 @@ int main() {
     }
 
     // Level 7
-    struct FinalBoss final;
     memset(&final, 0, sizeof(final));
     printf("Level 7: Send %lu bytes for FinalBoss\n", sizeof(final));
     read(0, &final, sizeof(final));

@@ -27,7 +27,7 @@ class ORC:
     DWARF-powered C type toolkit. Parses debug information from ELF binaries
     to provide struct crafting, parsing, casting, and type introspection.
     """
-    _CACHE_VERSION = 8
+    _CACHE_VERSION = 9
 
     # DIE references stored in the DWARF cache / on DWARFAddress / DWARFCrafter
     # etc. are 2-tuples: (die_offset, source) where source is 0 for the main
@@ -369,35 +369,41 @@ class ORC:
 
         sup = getattr(dwarfinfo, 'supplementary_dwarfinfo', None)
 
-        def _index_dwarfinfo(di, src):
-            for CU in di.iter_CUs():
-                for die in CU.iter_DIEs():
-                    if die.tag not in CACHEABLE_TAGS:
-                        continue
-                    name_attr = die.attributes.get('DW_AT_name')
-                    if not name_attr:
-                        continue
-                    is_decl = die.attributes.get('DW_AT_declaration')
-                    if is_decl and is_decl.value:
-                        continue
+        def _index_die(die, src, in_subprogram):
+            # Skip DW_TAG_variable inside a DW_TAG_subprogram ancestor: locals
+            # would shadow file-scope globals of the same name in the index.
+            if die.tag in CACHEABLE_TAGS and not (
+                die.tag == 'DW_TAG_variable' and in_subprogram
+            ):
+                name_attr = die.attributes.get('DW_AT_name')
+                is_decl = die.attributes.get('DW_AT_declaration')
+                if name_attr and not (is_decl and is_decl.value):
                     name_val = name_attr.value
                     if isinstance(name_val, int):
                         # DW_FORM_GNU_strp_alt / DW_FORM_strp_sup: the name
                         # lives in the supplementary .debug_str table.
-                        if sup is None:
-                            continue
-                        try:
-                            name_val = sup.get_string_from_table(name_val)
-                        except Exception:
-                            continue
-                    if not isinstance(name_val, bytes):
-                        continue
-                    name = name_val.decode('utf-8', errors='ignore')
-                    ref = (die.offset, src)
-                    if die.tag == 'DW_TAG_variable':
-                        self._dwarf_vars[name] = ref
-                    else:
-                        self._dwarf_types[name] = ref
+                        if sup is not None:
+                            try:
+                                name_val = sup.get_string_from_table(name_val)
+                            except Exception:
+                                name_val = None
+                        else:
+                            name_val = None
+                    if isinstance(name_val, bytes):
+                        name = name_val.decode('utf-8', errors='ignore')
+                        ref = (die.offset, src)
+                        if die.tag == 'DW_TAG_variable':
+                            self._dwarf_vars[name] = ref
+                        else:
+                            self._dwarf_types[name] = ref
+            if die.has_children:
+                child_in_sub = in_subprogram or die.tag == 'DW_TAG_subprogram'
+                for child in die.iter_children():
+                    _index_die(child, src, child_in_sub)
+
+        def _index_dwarfinfo(di, src):
+            for CU in di.iter_CUs():
+                _index_die(CU.get_top_DIE(), src, False)
 
         _index_dwarfinfo(dwarfinfo, self._SRC_MAIN)
         if sup is not None:

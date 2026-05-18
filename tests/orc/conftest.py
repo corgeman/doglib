@@ -74,6 +74,15 @@ def challenge_gpp(change_to_test_dir):
 
 
 @pytest.fixture(scope="session")
+def var_shadow_gcc(change_to_test_dir):
+    """Compile var_shadow.c (variable-name shadowing across scopes)."""
+    return _compile(
+        ["gcc", "var_shadow.c", "-o", "var_shadow.challenge.elf", "-g", "-no-pie"],
+        "var_shadow.challenge.elf",
+    )
+
+
+@pytest.fixture(scope="session")
 def challenge_clang(change_to_test_dir):
     """Compile challenge.c with clang. Skips if clang is unavailable."""
     return _compile(

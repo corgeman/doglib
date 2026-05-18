@@ -160,11 +160,28 @@ fn index_unit(
     let unit = dwarf.unit(header).map_err(|e| e.to_string())?;
     let mut entries = unit.entries();
 
-    while let Some((_, entry)) = entries.next_dfs().map_err(|e| e.to_string())? {
+    // Skip DW_TAG_variable inside any DW_TAG_subprogram ancestor: locals
+    // shadow file-scope globals of the same name in the flat-by-name index.
+    let mut depth: isize = 0;
+    let mut subprogram_depths: Vec<isize> = Vec::new();
+
+    while let Some((delta, entry)) = entries.next_dfs().map_err(|e| e.to_string())? {
+        depth += delta;
+        while subprogram_depths.last().is_some_and(|&d| d >= depth) {
+            subprogram_depths.pop();
+        }
         let tag = entry.tag();
+        if tag == gimli::DW_TAG_subprogram {
+            subprogram_depths.push(depth);
+        }
+        let in_subprogram = !subprogram_depths.is_empty();
+
         let is_var = tag == gimli::DW_TAG_variable;
         let is_type = TYPE_TAGS.contains(&tag);
         if !is_var && !is_type {
+            continue;
+        }
+        if is_var && in_subprogram {
             continue;
         }
 
