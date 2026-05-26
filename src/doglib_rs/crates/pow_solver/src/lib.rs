@@ -4,6 +4,7 @@ pub use constants::MAX_SUFFIX_LEN;
 pub mod sloth;
 pub mod hash_pow;
 pub mod gpu;
+pub mod argon2;
 
 use pyo3::prelude::*;
 
@@ -49,6 +50,15 @@ fn hash_bruteforce(
     result.ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("no solution found"))
 }
 
+/// Solve an Argon2id `a2id.v2` PoW on the GPU. Only available when built with
+/// the `cuda` feature; the Python layer falls back to argon2-cffi otherwise.
+#[cfg(feature = "cuda")]
+#[pyfunction]
+fn solve_argon2(py: Python<'_>, challenge: &str) -> PyResult<String> {
+    py.detach(|| argon2::solve(challenge))
+        .map_err(pyo3::exceptions::PyRuntimeError::new_err)
+}
+
 /// Returns "cuda", "cpu", or "unavailable" depending on what's compiled in and initialised.
 #[pyfunction]
 fn backend_info() -> &'static str {
@@ -69,6 +79,8 @@ pub fn register(parent: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(solve_sloth, &m)?)?;
     m.add_function(wrap_pyfunction!(hash_bruteforce, &m)?)?;
     m.add_function(wrap_pyfunction!(backend_info, &m)?)?;
+    #[cfg(feature = "cuda")]
+    m.add_function(wrap_pyfunction!(solve_argon2, &m)?)?;
     parent.add_submodule(&m)?;
     Ok(())
 }

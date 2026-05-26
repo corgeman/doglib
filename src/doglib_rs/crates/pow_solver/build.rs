@@ -1,4 +1,5 @@
 include!("src/constants.rs");
+include!("argon2i_refs_gen.rs");
 
 fn main() {
     let out = std::path::PathBuf::from(
@@ -19,9 +20,16 @@ fn main() {
         return;
     }
 
+    // Bake the Argon2i reference table (a constant for our fixed params) so the
+    // host needs no BlaMka implementation; argon2.rs include!s this.
+    std::fs::write(out.join("argon2_refs.rs"), emit_argon2i_refs_rs())
+        .expect("failed to write argon2_refs.rs");
+
     let cuda_dir = std::path::PathBuf::from("cuda");
 
-    for algo in ["sha256", "sha1"] {
+    // sha256/sha1 pull in the generated INST list via `-I{out}`; argon2id has no
+    // such include but the extra search path is harmless, so they share a loop.
+    for algo in ["sha256", "sha1", "argon2id"] {
         let src = cuda_dir.join(format!("{algo}_pow.cu"));
         let ptx = out.join(format!("{algo}_pow.ptx"));
 
@@ -51,4 +59,5 @@ fn main() {
 
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=src/constants.rs");
+    println!("cargo:rerun-if-changed=argon2i_refs_gen.rs");
 }

@@ -6,6 +6,7 @@ Supports:
   - sosette/FCSC (SHA-256, leading zero bits, printable suffix)
   - hxp (SHA-256, trailing zero bits, raw byte suffix)
   - hashcash (SHA-1, leading zero bits, hex counter)
+  - argon2id (kctf/ctfwithbirds "bbb" a2id.v2; needs argon2-cffi or the CUDA ext)
 
 Usage:
     from doglib.pow import do_pow
@@ -13,6 +14,7 @@ Usage:
 
     # Or solve individual formats directly:
     from doglib.pow import solve_sloth, solve_sosette, solve_hxp, solve_hashcash
+    from doglib.pow import solve_argon2
 """
 
 import re
@@ -31,6 +33,7 @@ from doglib.pow._hash import (
     solve_hxp,
     solve_hashcash,
 )
+from doglib.pow._argon2 import solve_argon2
 
 # ---- PoW detection patterns (each used for both detection and extraction) ---
 
@@ -38,6 +41,7 @@ _RE_SOSETTE = re.compile(rb"SHA256\(([a-zA-Z0-9]+)\s+.*?(\d+)\s+bits")
 _RE_HXP = re.compile(rb'sha256\(unhex\("([0-9a-f]+)".*?(\d+)\s+zero', re.IGNORECASE)
 _RE_HASHCASH = re.compile(rb'hashcash\s+-mCb(\d+)\s+"([^"]+)"')
 _RE_SLOTH = re.compile(rb"(s\.[A-Za-z0-9+/=]+\.[A-Za-z0-9+/=]+)")
+_RE_ARGON2 = re.compile(rb"a2id\.v2\.\d+\.[0-9a-fA-F]{32}")
 
 
 def _solve_sloth_from_data(data):
@@ -76,7 +80,15 @@ def _solve_hashcash_from_data(data):
     return None
 
 
+def _solve_argon2_from_data(data):
+    m = _RE_ARGON2.search(data)
+    if m:
+        return solve_argon2(m.group(0).decode())
+    return None
+
+
 _DETECTORS = [
+    (_RE_ARGON2, _solve_argon2_from_data),
     (_RE_SOSETTE, _solve_sosette_from_data),
     (_RE_HXP, _solve_hxp_from_data),
     (_RE_HASHCASH, _solve_hashcash_from_data),

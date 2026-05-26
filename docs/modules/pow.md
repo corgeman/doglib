@@ -12,6 +12,7 @@ we currently support the following proof-of-works:
 *  [`redpwn`](https://github.com/redpwn/jail/blob/main/internal/server/proxy.go#L83)
 *  [`sossette`](https://github.com/FCSC-FR/sossette/blob/main/src/pow.rs)
 *  [`cybersecnatlab/challenge-jail`](https://hub.docker.com/r/cybersecnatlab/challenge-jail)
+*  `bbb/defcon ctf`
 *  `hxpctf`
 
 
