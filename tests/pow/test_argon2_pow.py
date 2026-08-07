@@ -60,7 +60,15 @@ class TestVerify:
 def _cuda_argon2_available() -> bool:
     try:
         from doglib_rs import pow_solver as p
-        return hasattr(p, "solve_argon2") and p.backend_info() == "cuda"
+        return p.argon2_backend_info() == "cuda"
+    except Exception:
+        return False
+
+
+def _avx512_argon2_available() -> bool:
+    try:
+        from doglib_rs import pow_solver as p
+        return p.argon2_backend_info() == "avx512"
     except Exception:
         return False
 
@@ -80,6 +88,22 @@ class TestGpu:
         chal = _make_challenge(difficulty)
         sol = p.solve_argon2(chal)
         assert verify(chal, sol), f"GPU solution failed verification for D={difficulty}"
+
+
+class TestAvx512:
+    """Drive the Rust/AVX-512 solver directly and cross-check with argon2-cffi."""
+
+    @pytest.mark.parametrize("difficulty", [1, 7])
+    def test_avx512_solution_verifies(self, difficulty):
+        if not _avx512_argon2_available():
+            pytest.skip("AVX-512 argon2 backend not available")
+        from doglib_rs import pow_solver as p
+
+        chal = _make_challenge(difficulty)
+        sol = p.solve_argon2(chal, 2)
+        assert verify(chal, sol), (
+            f"AVX-512 solution failed verification for D={difficulty}"
+        )
 
 
 class TestAutoDetect:
