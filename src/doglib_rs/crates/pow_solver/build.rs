@@ -15,15 +15,16 @@ fn main() {
     std::fs::write(out.join("pow_inst.h"), inst_calls)
         .expect("failed to write pow_inst.h");
 
+    // Shared by the CPU AVX-512 and CUDA Argon2 backends.
+    std::fs::write(out.join("argon2_refs.rs"), emit_argon2i_refs_rs())
+        .expect("failed to write argon2_refs.rs");
+    println!("cargo:rerun-if-changed=argon2i_refs_gen.rs");
+
     // Only compile CUDA kernels when the `cuda` feature is enabled.
     if std::env::var("CARGO_FEATURE_CUDA").is_err() {
         return;
     }
 
-    // Bake the Argon2i reference table (a constant for our fixed params) so the
-    // host needs no BlaMka implementation; argon2.rs include!s this.
-    std::fs::write(out.join("argon2_refs.rs"), emit_argon2i_refs_rs())
-        .expect("failed to write argon2_refs.rs");
 
     let cuda_dir = std::path::PathBuf::from("cuda");
 

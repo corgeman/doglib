@@ -9,9 +9,10 @@ sub-proofs, each needing a digest with ``proof_difficulty = D - split_bits``
 leading zero bits.  Sub-proofs are chained — each one's winning digest seeds the
 next one's input — so we parallelise *within* a sub-proof, never across.
 
-Two tiers, fastest available wins:
-  - the doglib_rs CUDA extension (if built with CUDA), then
-  - argon2-cffi + multiprocessing — the practical floor (``pip install argon2-cffi``).
+Three tiers, fastest available wins:
+  - the doglib_rs CUDA extension, then
+  - the doglib_rs AVX-512 extension, then
+  - argon2-cffi + multiprocessing (``pip install argon2-cffi``).
 
 There is deliberately no pure-Python compute fallback: a hand-rolled Argon2 in
 Python runs at seconds-per-hash, which is unusable at real difficulties.
@@ -30,15 +31,15 @@ _warned_slow = False
 
 
 def _warn_slow_once():
-    """Warn (once) that we're on the slow CPU path, mirroring _hash.py's style."""
+    """Warn once when neither accelerated backend is available."""
     global _warned_slow
     if _warned_slow:
         return
     _warned_slow = True
     sys.stderr.write(
-        "[doglib.pow] running with argon2-cffi (~8x slower than GPU-based cracking).\n"
-        "see docs/gpu_pow_setup.md\n"
-        )
+        "[doglib.pow] running with argon2-cffi (CUDA/AVX-512 unavailable).\n"
+        "see docs/tutorials/gpu_pow_setup.md\n"
+    )
 
 # ---- fixed parameters of the bbb a2id.v2 scheme ----------------------------
 
@@ -211,38 +212,40 @@ def _argon2_cffi_available() -> bool:
 def solve_argon2(challenge: str | bytes, workers: int | None = None) -> bytes:
     """Solve an ``a2id.v2`` Argon2id PoW, returning the dotted-hex solution bytes.
 
-    Dispatches to the CUDA extension when available, otherwise argon2-cffi across
-    all CPU cores.  Raises ``RuntimeError`` if neither backend is installed.
+    Dispatches through CUDA, AVX-512, then argon2-cffi. Raises ``RuntimeError``
+    if no backend is available.
     """
     if isinstance(challenge, bytes):
         challenge = challenge.decode()
     challenge = challenge.strip()
     decode_challenge(challenge)  # validate early
 
-    # Tier 1: CUDA. No bits threshold — one argon2 hash is ms-scale and the GPU
-    # does thousands per launch, so an available GPU never loses to the CPU here.
-    if _rs_pow is not None and hasattr(_rs_pow, "solve_argon2"):
+    native_backend = "unavailable"
+    if _rs_pow is not None:
         try:
-            is_cuda = _rs_pow.backend_info() == "cuda"
+            native_backend = _rs_pow.argon2_backend_info()
         except Exception:
-            is_cuda = False
-        if is_cuda:
-            try:
-                sol = _rs_pow.solve_argon2(challenge)
-                sol = sol.encode() if isinstance(sol, str) else sol
-                # Best-effort guard against a faulty GPU result.
-                if _argon2_cffi_available() and not verify(challenge, sol):
-                    raise RuntimeError(f"GPU argon2 solution failed verification: {sol!r}")
-                return sol
-            except Exception as e:
-                sys.stderr.write(f"[doglib.pow] GPU argon2 solve failed ({e}); falling back to CPU.\n")
-                # fall through to the argon2-cffi path
+            pass
+    if native_backend in ("cuda", "avx512"):
+        try:
+            sol = _rs_pow.solve_argon2(challenge, workers or 0)
+            sol = sol.encode() if isinstance(sol, str) else sol
+            # Best-effort guard against a faulty accelerated result.
+            if _argon2_cffi_available() and not verify(challenge, sol):
+                raise RuntimeError(
+                    f"accelerated argon2 solution failed verification: {sol!r}"
+                )
+            return sol
+        except Exception as error:
+            sys.stderr.write(
+                "[doglib.pow] accelerated argon2 solve failed "
+                f"({error}); falling back to argon2-cffi.\n"
+            )
 
-    # Tier 2: argon2-cffi multiprocessing.
     if not _argon2_cffi_available():
         raise RuntimeError(
             "argon2id PoW solver needs argon2-cffi (`pip install argon2-cffi`) "
-            "or the doglib_rs CUDA extension."
+            "or doglib_rs on a CUDA/AVX-512-capable host."
         )
     _warn_slow_once()
     return solve(challenge, workers=workers or 0)

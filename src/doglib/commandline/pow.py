@@ -102,6 +102,21 @@ def _check(args) -> None:
         rs_installed = False
 
     try:
+        import argon2.low_level  # noqa: F401
+        cffi_available = True
+    except ImportError:
+        cffi_available = False
+
+    argon2_backend = "unavailable"
+    if rs_installed:
+        try:
+            argon2_backend = _rs_pow.argon2_backend_info()
+        except Exception:
+            pass
+    if argon2_backend not in ("cuda", "avx512"):
+        argon2_backend = "argon2-cffi" if cffi_available else "unavailable"
+
+    try:
         from importlib.metadata import version as _meta_version
         rs_version = _meta_version("doglib_rs")
         rs_label = f"installed ({rs_version})"
@@ -112,6 +127,7 @@ def _check(args) -> None:
         print(f"doglib_rs:     not installed")
         print(f"cuda feature:  n/a")
         print(f"cuda init:     n/a")
+        print(f"argon2 backend:  {argon2_backend}")
         print()
         print("status: CPU-only Python fallback (very slow)")
         return
@@ -124,6 +140,7 @@ def _check(args) -> None:
     print(f"doglib_rs:     {rs_label}")
     print(f"cuda feature:  {'compiled in' if cuda_compiled else 'not compiled'}")
     print(f"cuda init:     {'ok' if cuda_ok else 'failed' if cuda_compiled else 'n/a'}")
+    print(f"argon2 backend:  {argon2_backend}")
     print()
 
     if cuda_ok:
