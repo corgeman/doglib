@@ -84,7 +84,8 @@ const fn upper_triangle_mask(idx: i32, i: i32) -> u8 {
 /// Construct a sliding 8-element window at position I entirely from registers.
 /// Uses valignq to combine adjacent clumps, avoiding store-forwarding stalls
 /// that occur with unaligned loads from recently-stored memory.
-#[inline(always)]
+#[inline]
+#[target_feature(enable = "avx512f,avx512ifma")]
 unsafe fn make_window<const I: i32>(clumps: &[__m512i; 4], zero: __m512i) -> __m512i {
     const { assert!(I >= -7 && I <= 24) };
 
@@ -124,7 +125,8 @@ unsafe fn make_window<const I: i32>(clumps: &[__m512i; 4], zero: __m512i) -> __m
 // Both unmasked and masked broadcasts use inline asm with {1to8} memory
 // operands to avoid materializing temporary broadcast vectors in ZMM regs.
 
-#[inline(always)]
+#[inline]
+#[target_feature(enable = "avx512f,avx512ifma")]
 unsafe fn accumulate_pair<const I: i32, const J: usize>(
     data: *const u64,
     m1: __m512i,
@@ -199,7 +201,8 @@ unsafe fn accumulate_pair<const I: i32, const J: usize>(
 }
 
 /// Process one sliding window position. J-loop is fully unrolled via 7 explicit calls.
-#[inline(always)]
+#[inline]
+#[target_feature(enable = "avx512f,avx512ifma")]
 unsafe fn process_window<const I: i32>(
     data: *const u64,
     m1: __m512i,
