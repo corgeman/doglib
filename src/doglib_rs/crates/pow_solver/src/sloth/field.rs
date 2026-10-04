@@ -216,81 +216,174 @@ mod tests {
         assert_eq!(result, expected);
     }
 
+    #[cfg(target_arch = "x86_64")]
+    fn simd_backends() -> [
+        (
+            &'static str,
+            fn() -> bool,
+            unsafe fn(&mut Fe1279),
+            unsafe fn(&Fe1279, usize) -> Option<usize>,
+            unsafe fn(&mut Fe1279, u32),
+        );
+        2
+    ] {
+        use crate::sloth::{field_avx512, field_avx512vl};
+        [
+            (
+                "avx512",
+                field_avx512::is_supported,
+                field_avx512::single_square_mod,
+                field_avx512::debug_compare_squarings,
+                field_avx512::solve_inner,
+            ),
+            (
+                "avx512vl",
+                field_avx512vl::is_supported,
+                field_avx512vl::single_square_mod,
+                field_avx512vl::debug_compare_squarings,
+                field_avx512vl::solve_inner,
+            ),
+        ]
+    }
+
     #[test]
     #[cfg(target_arch = "x86_64")]
-    fn avx512_divergence_step() {
-        if !std::arch::is_x86_feature_detected!("avx512ifma") {
-            eprintln!("skipping: CPU lacks AVX512 IFMA");
-            return;
-        }
-        use crate::sloth::field_avx512;
-
+    fn simd_divergence_step() {
         let input = [
             0x1F, 0xE7, 0xCF, 0x8A, 0xE2, 0xF7, 0xD8, 0x33, 0xDB, 0x7C, 0xDF, 0x7B,
             0x72, 0x97, 0x74, 0x9C,
         ];
         let fe = Fe1279::from_be_bytes(&input);
-        let result = unsafe { field_avx512::debug_compare_squarings(&fe, 1277) };
-        assert_eq!(result, None, "diverged at step {:?}", result);
+        for (backend, available, _, compare, _) in simd_backends() {
+            if !available() {
+                eprintln!("skipping unavailable {backend}");
+                continue;
+            }
+            // SAFETY: the availability callback checks all required features.
+            let result = unsafe { compare(&fe, 1277) };
+            assert_eq!(result, None, "{backend}: diverged at step {:?}", result);
+        }
     }
 
     #[test]
     #[cfg(target_arch = "x86_64")]
-    fn avx512_single_squaring_matches_scalar() {
-        if !std::arch::is_x86_feature_detected!("avx512ifma") {
-            eprintln!("skipping: CPU lacks AVX512 IFMA");
-            return;
-        }
-        use crate::sloth::field_avx512;
-
+    fn simd_single_squaring_matches_scalar() {
         let input = [
             0x1F, 0xE7, 0xCF, 0x8A, 0xE2, 0xF7, 0xD8, 0x33, 0xDB, 0x7C, 0xDF, 0x7B,
             0x72, 0x97, 0x74, 0x9C,
         ];
-
-        // Scalar
         let mut scalar = Fe1279::from_be_bytes(&input);
         scalar.square_mod();
-
-        // AVX512 (one squaring via solve_inner with modified approach)
-        let mut avx = Fe1279::from_be_bytes(&input);
-        unsafe { field_avx512::single_square_mod(&mut avx) };
-
-        for i in 0..LIMBS {
-            assert_eq!(
-                scalar.limb[i], avx.limb[i],
-                "limb {} differs: scalar={:#x} avx={:#x}",
-                i, scalar.limb[i], avx.limb[i]
-            );
+        for (backend, available, square, _, _) in simd_backends() {
+            if !available() {
+                eprintln!("skipping unavailable {backend}");
+                continue;
+            }
+            let mut avx = Fe1279::from_be_bytes(&input);
+            // SAFETY: the availability callback checks all required features.
+            unsafe { square(&mut avx) };
+            for i in 0..LIMBS {
+                assert_eq!(
+                    scalar.limb[i], avx.limb[i],
+                    "{backend}: limb {} differs: scalar={:#x} avx={:#x}",
+                    i, scalar.limb[i], avx.limb[i]
+                );
+            }
         }
     }
 
     #[test]
     #[cfg(target_arch = "x86_64")]
-    fn avx512_solve_difficulty_1() {
-        if !std::arch::is_x86_feature_detected!("avx512ifma") {
-            eprintln!("skipping: CPU lacks AVX512 IFMA");
-            return;
+    fn simd_boundary_and_random_carry_chains() {
+        for (backend, available, _, compare, solve) in simd_backends() {
+            if !available() {
+                eprintln!("skipping unavailable {backend}");
+                continue;
+            }
+            let mut seed = 0x9e3779b97f4a7c15u64;
+            for case in 0..256 {
+                let mut input = Fe1279::ZERO;
+                match case {
+                    0 => {}
+                    1 => input.limb[0] = 1,
+                    2..=4 => {
+                        input.limb.fill(MASK52);
+                        input.limb[24] = MASK31;
+                        input.limb[0] -= case - 2; // p, p-1, p-2
+                    }
+                    5..=54 => {
+                        let limb = ((case - 5) / 2) as usize;
+                        input.limb[limb] = if case & 1 == 1 {
+                            1
+                        } else if limb == 24 {
+                            MASK31
+                        } else {
+                            MASK52
+                        };
+                    }
+                    _ => {
+                        for limb in &mut input.limb {
+                            seed ^= seed << 13;
+                            seed ^= seed >> 7;
+                            seed ^= seed << 17;
+                            *limb = seed & MASK52;
+                        }
+                        input.limb[24] &= MASK31;
+                    }
+                }
+                // SAFETY: the availability callback checks all required features.
+                assert_eq!(
+                    unsafe { compare(&input, 64) },
+                    None,
+                    "{backend}: squaring case {case}"
+                );
+                if case < 8 {
+                    for difficulty in 0..=3 {
+                        let mut scalar = input;
+                        let mut avx = input;
+                        for _ in 0..difficulty {
+                            scalar.sqrt_step();
+                            scalar.xor_one();
+                        }
+                        // SAFETY: the availability callback checks all required features.
+                        unsafe { solve(&mut avx, difficulty) };
+                        assert_eq!(scalar.limb, avx.limb, "{backend}: case {case}, difficulty {difficulty}");
+                    }
+                }
+            }
         }
+    }
+
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn simd_solve_difficulty_1() {
         use crate::sloth::solver;
-        let result =
-            solver::solve_with("avx512", "s.AAAAAQ==.H+fPiuL32DPbfN97cpd0nA==").unwrap();
         let expected = "s.SehdFNCoMtQI4d9JBXsmzWdYk77jtb36Io5acLmjB6l/Vr1VUUsegi3CNbUf7lgUI5kGuxgdleSh+poE/BCGoAoaTNGVBC14jl+W0D7wg8R2IPDCUSTueG0JNCtJL8OeNPiReJ+CBFcqcR0Ntc9Qakzm8sZaBjGld1Rh3FK6gresUqjpnxGS4SgIg/lp/iZ+2EetM94ewJHsXghGaWQYkg==";
-        assert_eq!(result, expected);
+        for (backend, available, _, _, _) in simd_backends() {
+            if !available() {
+                eprintln!("skipping unavailable {backend}");
+                continue;
+            }
+            let result =
+                solver::solve_with(backend, "s.AAAAAQ==.H+fPiuL32DPbfN97cpd0nA==").unwrap();
+            assert_eq!(result, expected, "{backend}");
+        }
     }
 
     #[test]
     #[cfg(target_arch = "x86_64")]
-    fn avx512_solve_difficulty_50() {
-        if !std::arch::is_x86_feature_detected!("avx512ifma") {
-            eprintln!("skipping: CPU lacks AVX512 IFMA");
-            return;
-        }
+    fn simd_solve_difficulty_50() {
         use crate::sloth::solver;
-        let result =
-            solver::solve_with("avx512", "s.AAAAMg==.H+fPiuL32DPbfN97cpd0nA==").unwrap();
         let expected = "s.O5X5tBMcDT3O2E/32edB/FqCuws5LuvMKGGAkqVc9Wak/gJmwkUpUvYWOlr9x+tsccb6/KcNCQTym1Jzclv+aXE49pu5RkukYgijK8gbuuQrfp+YIJ6OFHId2tCIAdV/QYFIrhUy1pVUZ6mGCCCRjGqMVSo6QGDAS59tKKbnGjdZYRLSku30L9GWpSx9Sdjas/PzTxOsN6rjlCBE/qgGHg==";
-        assert_eq!(result, expected);
+        for (backend, available, _, _, _) in simd_backends() {
+            if !available() {
+                eprintln!("skipping unavailable {backend}");
+                continue;
+            }
+            let result =
+                solver::solve_with(backend, "s.AAAAMg==.H+fPiuL32DPbfN97cpd0nA==").unwrap();
+            assert_eq!(result, expected, "{backend}");
+        }
     }
 
     #[test]

@@ -190,6 +190,9 @@ two very fast proof-of-work solvers in rust/cuda
 - sloth: fastest solver for [redpwn/kctf pow](https://github.com/redpwn/pow) i am aware of. 2nd place is [this](https://anemato.de/blog/kctf-vdf) which is ~10% slower
 - hash: fast bruteforcer for "find hash with N leading zeros"-based POWs, in my tests it's basically equivalent to hashcat. works on WSL too. requires some additional setup, see [gpu_pow_setup.md](docs/gpu_pow_setup.md). includes cpu fallback (although MUCH slower)
 
+sloth uses AVX-512VL on AMD Zen 4/Zen 4c CPUs. it cut solve time by about
+26% compared to the 512-bit backend on a Ryzen 9 7940HS.
+
 ## flagguesser
 character-by-character brutes taking too long?  
 have an ngram model trained on 10k+ real ctf flags help you out:
